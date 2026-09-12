@@ -58,8 +58,8 @@ public class DatabaseManager {
 	}
 	
 	public static void saveCheckpoint(TransferMetadata metadata, String status) {
-		String sql = "INSERT INTO pending_transfers (transfer_id, file_name, total_bytes, bytes_transferred, sha256_hash, peer_ip, status) " +
-					 "VALUES (?, ?, ?, ?, ?, ?, ?) " +
+		String sql = "INSERT INTO pending_transfers (transfer_id, file_name, total_bytes, bytes_transferred, sha256_hash, peer_ip, status, last_updated) " +
+					 "VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
 					 "ON CONFLICT(transfer_id) DO UPDATE SET " +
 					 "bytes_transferred = excluded.bytes_transferred, " +
 					 "status = excluded.status, " +
