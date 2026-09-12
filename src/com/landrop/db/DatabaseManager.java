@@ -40,12 +40,12 @@ public class DatabaseManager {
 				"sha256_hash TEXT NOT NULL, " +
 				"peer_ip TEXT NOT NULL, " +
 				"status TEXT NOT NULL, " +
-				"last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP);";
+				"last_updated INTEGER NOT NULL);";
 		
 		String createPeersTable = "CREATE TABLE IF NOT EXISTS trusted_peers (" +
 				"ip_address TEXT PRIMARY KEY, " +
 				"hostname TEXT NOT NULL, " +
-				"added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);";
+				"added_at INTEGER NOT NULL);";
 		
 		try (Connection conn = getConnection();
 			 Statement stmt = conn.createStatement()) {
@@ -74,6 +74,7 @@ public class DatabaseManager {
 			pstmt.setString(5, metadata.getSha256Hash());
 			pstmt.setString(6, metadata.getPeerIp());
 			pstmt.setString(7, status);
+			pstmt.setLong(8, System.currentTimeMillis());
 			pstmt.executeUpdate();
 		} catch (SQLException e) {
 			LOGGER.log(Level.SEVERE, "Error saving transfer checkpoint: " + metadata.getTransferId(), e);
