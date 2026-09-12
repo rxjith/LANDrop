@@ -1,16 +1,32 @@
 package com.landrop.db;
 
 import com.landrop.model.TransferMetadata;
+
+import java.io.File;
 import java.sql.*;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class DatabaseManager {
-	private static final String DB_URL = "jdbc:sqlite:landrop.db";
+	
+	private static final Logger LOGGER = Logger.getLogger(DatabaseManager.class.getName());
+	private static final String DB_URL;
+	
+	static {
+		String userHome = System.getProperty("user.home");
+		File appDir = new File(userHome, ".landrop");
+		if (!appDir.exists()) {
+			appDir.mkdirs();
+		}
+		DB_URL = "jdbc:sqlite:" + new File(appDir, "landrop.db").getAbsolutePath();
+	}
 	
 	public static Connection getConnection() throws SQLException {
 		try  {
 			Class.forName("org.sqlite.JDBC");
 		} catch (ClassNotFoundException e) {
-			System.err.println("SQLite Driver Class missing from Build Path!");
+			LOGGER.log(Level.SEVERE, "SQLite JDBC Driver missing from classpath!", e);
+			throw new IllegalStateException("SQLite JDBC Driver missing. Ensure sqlite-jdbc dependency is present.", e);
 		}		
 		return DriverManager.getConnection(DB_URL);
 	}
@@ -35,9 +51,9 @@ public class DatabaseManager {
 			 Statement stmt = conn.createStatement()) {
 			stmt.execute(createTransfersTable);
 			stmt.execute(createPeersTable);
-			System.out.println("SQLite tables checked/created successfully.");
+			LOGGER.info("SQLite database tables initialized successfully.");
 		} catch (SQLException e) {
-			System.err.println("Failed to initialize SQLite database: " + e.getMessage());
+			LOGGER.log(Level.SEVERE, "Failed to initialize SQLite database", e);
 		}
 	}
 	
@@ -60,7 +76,7 @@ public class DatabaseManager {
 			pstmt.setString(7, status);
 			pstmt.executeUpdate();
 		} catch (SQLException e) {
-			System.err.println("Error saving checkpoint: " + e.getMessage());
+			LOGGER.log(Level.SEVERE, "Error saving transfer checkpoint: " + metadata.getTransferId(), e);
 		}
 	}
 	
@@ -70,12 +86,16 @@ public class DatabaseManager {
 		try (Connection conn = getConnection();
 			 PreparedStatement pstmt = conn.prepareStatement(sql)) {
 			pstmt.setString(1,  transferId);
-			ResultSet rs = pstmt.executeQuery();
-			if (rs.next()) {
-				return rs.getLong("bytes_transferred");
+			
+			try (ResultSet rs = pstmt.executeQuery()) {
+				if (rs.next()) {
+					return rs.getLong("bytes_transferred");
+				}
 			}
 		} catch (SQLException e) {
-			System.err.println("Error reading resume offset: " + e.getMessage());
-		} return 0;
+			LOGGER.log(Level.SEVERE, "Error reading resume offset: " + transferId, e);
+		} 
+		
+		return 0L;
 	}
 }
