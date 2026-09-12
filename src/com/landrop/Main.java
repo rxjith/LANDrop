@@ -1,4 +1,4 @@
-package landrop;
+package com.landrop;
 
 public class Main {
 
