@@ -68,9 +68,15 @@ public class MulticastDiscoveryService {
             broadcasterThread.start();
             cleanerThread.start();
         
-        } catch (Exception e) {
-            e.printStackTrace(); //
-        }
+} catch (Exception e) {
+    running = false;
+    if (socket != null) {
+        socket.close();
+        socket = null;
+    }
+    joinedInterfaces.clear();
+    e.printStackTrace();
+}
     }
 
     private void joinActiveInterfaces() {
