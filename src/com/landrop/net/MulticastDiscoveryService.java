@@ -43,11 +43,12 @@ public class MulticastDiscoveryService {
             groupAddress = InetAddress.getByName(MULTICAST_GROUP); // Resolve the multicast group address
             groupSocketAddress = new InetSocketAddress(groupAddress, MULTICAST_PORT); // Create a socket address for the multicast group
             
-            socket = new MulticastSocket(MULTICAST_PORT); // Create a multicast socket bound to the specified port
-            socket.setReuseAddress(true);
-            try {
-                socket.setOption(StandardSocketOptions.SO_REUSEPORT, true);
-            } catch (Exception ignored) {}
+socket = new MulticastSocket((SocketAddress) null);
+socket.setReuseAddress(true);
+try {
+    socket.setOption(StandardSocketOptions.SO_REUSEPORT, true);
+} catch (Exception ignored) {}
+socket.bind(new InetSocketAddress(MULTICAST_PORT));
             socket.setTimeToLive(4);
 
             try {
