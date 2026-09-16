@@ -1,6 +1,11 @@
 package com.landrop;
 
+import com.landrop.net.FileTransferClient;
+import com.landrop.net.FileTransferServer;
 import com.landrop.net.MulticastDiscoveryService;
+
+import java.io.File;
+import java.net.InetAddress;
 import java.util.Scanner;
 
 public class Main {
@@ -8,10 +13,9 @@ public class Main {
         Scanner scanner = new Scanner(System.in);
 
         System.out.println("=================================================");
-        System.out.println("         LANDrop Multicast Testbed               ");
+        System.out.println("          LANDrop Multicast Testbed              ");
         System.out.println("=================================================");
 
-        // Change to "Abhijit-Laptop" on the laptop, and "Abhijit-PC" on the PC
         System.out.print("Enter device name for this node [default: Abhijit-PC]: ");
         String nameInput = scanner.nextLine().trim();
         final String LOCAL_DEVICE_NAME = nameInput.isEmpty() ? "Abhijit-PC" : nameInput;
@@ -21,6 +25,15 @@ public class Main {
         int tcpPort = portInput.isEmpty() ? 52145 : Integer.parseInt(portInput);
 
         MulticastDiscoveryService discoveryService = new MulticastDiscoveryService();
+
+        // 1. Initialize and start the background TCP file receiving server
+        FileTransferServer fileServer = new FileTransferServer(tcpPort, "downloads");
+        try {
+            fileServer.start();
+            System.out.println("[TCP FILE SERVER] Listening for incoming files on port " + tcpPort);
+        } catch (Exception e) {
+            System.err.println("[TCP FILE SERVER ERROR] Failed to start file server: " + e.getMessage());
+        }
 
         // Listen for incoming subnet chat messages
         discoveryService.setChatMessageListener(incomingMsg -> {
@@ -33,11 +46,12 @@ public class Main {
         System.out.println("Service online on 230.0.0.1:4446.");
         System.out.println("-------------------------------------------------");
         System.out.println("Commands:");
-        System.out.println("  /peers         - Show currently active devices");
-        System.out.println("  /msg <text>    - Broadcast chat message across interfaces");
-        System.out.println("  /stealth       - Toggle stealth mode on/off");
-        System.out.println("  /help          - Show available commands");
-        System.out.println("  /exit          - Leave chat, broadcast BYE, and shutdown");
+        System.out.println("  /peers                - Show currently active devices");
+        System.out.println("  /send <ip> <filepath> - Stream file over TCP to peer IP");
+        System.out.println("  /msg <text>           - Broadcast chat message across interfaces");
+        System.out.println("  /stealth              - Toggle stealth mode on/off");
+        System.out.println("  /help                 - Show available commands");
+        System.out.println("  /exit                 - Leave chat, broadcast BYE, and shutdown");
         System.out.println("-------------------------------------------------");
 
         boolean active = true;
@@ -69,6 +83,25 @@ public class Main {
                     });
                 }
                 System.out.println("-------------------------------------------------\n");
+            } else if (input.startsWith("/send ")) {
+                String[] parts = input.split(" ", 3);
+                if (parts.length < 3) {
+                    System.out.println("Usage: /send <peer-ip> <file-path>");
+                } else {
+                    String targetIp = parts[1];
+                    File targetFile = new File(parts[2].replace("\"", ""));
+
+                    new Thread(() -> {
+                        try {
+                            System.out.println("[FILE] Sending " + targetFile.getName() + " to " + targetIp + ":" + tcpPort + "...");
+                            FileTransferClient.sendFile(InetAddress.getByName(targetIp), tcpPort, targetFile);
+                            System.out.println("[FILE] Transfer complete: " + targetFile.getName());
+                        } catch (Exception e) {
+                            System.err.println("[FILE ERROR] Failed sending file: " + e.getMessage());
+                        }
+                        System.out.print("> ");
+                    }).start();
+                }
             } else if (input.equalsIgnoreCase("/stealth")) {
                 boolean nextState = !discoveryService.isStealthMode();
                 discoveryService.setStealthMode(nextState);
@@ -81,13 +114,13 @@ public class Main {
                 }
             } else if (input.equalsIgnoreCase("/help")) {
                 System.out.println("\nAvailable commands:");
-                System.out.println("  /peers         - Show currently active devices");
-                System.out.println("  /msg <text>    - Broadcast chat message across interfaces");
-                System.out.println("  /stealth       - Toggle broadcast suppression on/off");
-                System.out.println("  /help          - Show this menu");
-                System.out.println("  /exit          - Leave chat, broadcast BYE, and shutdown\n");
+                System.out.println("  /peers                - Show currently active devices");
+                System.out.println("  /send <ip> <filepath> - Stream file over TCP to peer IP");
+                System.out.println("  /msg <text>           - Broadcast chat message across interfaces");
+                System.out.println("  /stealth              - Toggle broadcast suppression on/off");
+                System.out.println("  /help                 - Show this menu");
+                System.out.println("  /exit                 - Leave chat, broadcast BYE, and shutdown\n");
             } else {
-                // Broadcast message to everyone on the multicast group
                 discoveryService.sendSubnetChat(LOCAL_DEVICE_NAME, input);
             }
 
@@ -96,7 +129,8 @@ public class Main {
             }
         }
 
-        System.out.println("\nStopping discovery service and broadcasting disconnect...");
+        System.out.println("\nStopping discovery service and file server...");
+        fileServer.stop();
         discoveryService.stop();
         scanner.close();
         System.out.println("Disconnected.");
