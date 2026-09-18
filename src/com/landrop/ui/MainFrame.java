@@ -14,7 +14,10 @@ import java.awt.dnd.*;
 import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public class MainFrame extends JFrame {
 
@@ -56,17 +59,14 @@ public class MainFrame extends JFrame {
     private void initUI() {
         setLayout(new BorderLayout(10, 10));
 
-        // Header
         JPanel headerPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 15, 10));
         headerPanel.add(new JLabel("<html><h2>LANDrop File Sharing Engine</h2></html>"));
         add(headerPanel, BorderLayout.NORTH);
 
-        // Discovered Peers List
         peerList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         peerList.setBorder(BorderFactory.createTitledBorder("Active Peers"));
         JScrollPane scrollPane = new JScrollPane(peerList);
 
-        // Drag and Drop Area
         JPanel dropZone = new JPanel(new GridBagLayout());
         dropZone.setBorder(BorderFactory.createTitledBorder("Drop Zone"));
         JLabel dropLabel = new JLabel("<html><center>Drag & Drop Files Here<br><small>(Select a peer first)</small></center></html>");
@@ -78,7 +78,6 @@ public class MainFrame extends JFrame {
         splitPane.setDividerLocation(320);
         add(splitPane, BorderLayout.CENTER);
 
-        // Status Footer
         JPanel statusPanel = new JPanel(new BorderLayout(10, 10));
         statusPanel.setBorder(BorderFactory.createEmptyBorder(5, 10, 10, 10));
         progressBar.setStringPainted(true);
@@ -139,11 +138,20 @@ public class MainFrame extends JFrame {
 
     private void startPeerRefreshTimer() {
         Timer timer = new Timer(2000, e -> {
-            PeerDevice currentSelection = peerList.getSelectedValue();
-            peerListModel.clear();
-            discoveryService.getActivePeers().values().forEach(peerListModel::addElement);
-            if (currentSelection != null) {
-                peerList.setSelectedValue(currentSelection, true);
+            Map<String, PeerDevice> activePeers = discoveryService.getActivePeers();
+            
+            Set<String> currentIps = activePeers.keySet();
+            for (int i = peerListModel.size() - 1; i >= 0; i--) {
+                PeerDevice device = peerListModel.get(i);
+                if (!currentIps.contains(device.getIpAddress().getHostAddress())) {
+                    peerListModel.remove(i);
+                }
+            }
+
+            for (PeerDevice peer : activePeers.values()) {
+                if (!peerListModel.contains(peer)) {
+                    peerListModel.addElement(peer);
+                }
             }
         });
         timer.start();
