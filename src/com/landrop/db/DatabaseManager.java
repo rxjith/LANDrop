@@ -8,95 +8,92 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class DatabaseManager {
-	
-	private static final Logger LOGGER = Logger.getLogger(DatabaseManager.class.getName());
-	private static final String DB_URL;
-	
-	static {
-		String userHome = System.getProperty("user.home");
-		File appDir = new File(userHome, ".landrop");
-		if (!appDir.exists()) {
-			appDir.mkdirs();
-		}
-		DB_URL = "jdbc:sqlite:" + new File(appDir, "landrop.db").getAbsolutePath();
-	}
-	
-	public static Connection getConnection() throws SQLException {
-		try  {
-			Class.forName("org.sqlite.JDBC");
-		} catch (ClassNotFoundException e) {
-			LOGGER.log(Level.SEVERE, "SQLite JDBC Driver missing from classpath!", e);
-			throw new IllegalStateException("SQLite JDBC Driver missing. Ensure sqlite-jdbc dependency is present.", e);
-		}		
-		return DriverManager.getConnection(DB_URL);
-	}
-	
-	public static void initializeDatabase() {
-		String createTransfersTable = "CREATE TABLE IF NOT EXISTS pending_transfers (" +
-				"transfer_id TEXT PRIMARY KEY, " +
-				"file_name TEXT NOT NULL, " +
-				"total_bytes INTEGER NOT NULL, " +
-				"bytes_transferred INTEGER NOT NULL, " +
-				"sha256_hash TEXT NOT NULL, " +
-				"peer_ip TEXT NOT NULL, " +
-				"status TEXT NOT NULL, " +
-				"last_updated INTEGER NOT NULL);";
-		
-		String createPeersTable = "CREATE TABLE IF NOT EXISTS trusted_peers (" +
-				"ip_address TEXT PRIMARY KEY, " +
-				"hostname TEXT NOT NULL, " +
-				"added_at INTEGER NOT NULL);";
-		
-		try (Connection conn = getConnection();
-			 Statement stmt = conn.createStatement()) {
-			stmt.execute(createTransfersTable);
-			stmt.execute(createPeersTable);
-			LOGGER.info("SQLite database tables initialized successfully.");
-		} catch (SQLException e) {
-			LOGGER.log(Level.SEVERE, "Failed to initialize SQLite database", e);
-		}
-	}
-	
-	public static void saveCheckpoint(TransferMetadata metadata, String status) {
-		String sql = "INSERT INTO pending_transfers (transfer_id, file_name, total_bytes, bytes_transferred, sha256_hash, peer_ip, status, last_updated) " +
-					 "VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
-					 "ON CONFLICT(transfer_id) DO UPDATE SET " +
-					 "bytes_transferred = excluded.bytes_transferred, " +
-					 "status = excluded.status, " +
-					 "last_updated = CURRENT_TIMESTAMP;";
-		
-		try (Connection conn = getConnection();
-			 PreparedStatement pstmt = conn.prepareStatement(sql)) {
-			pstmt.setString(1, metadata.getTransferId());
-			pstmt.setString(2, metadata.getFileName());
-			pstmt.setLong(3, metadata.getTotalSizeBytes());
-			pstmt.setLong(4, metadata.getBytesTransferred());
-			pstmt.setString(5, metadata.getSha256Hash());
-			pstmt.setString(6, metadata.getPeerIp());
-			pstmt.setString(7, status);
-			pstmt.setLong(8, System.currentTimeMillis());
-			pstmt.executeUpdate();
-		} catch (SQLException e) {
-			LOGGER.log(Level.SEVERE, "Error saving transfer checkpoint: " + metadata.getTransferId(), e);
-		}
-	}
-	
-	public static long getResumeOffset(String transferId) {
-		String sql = "SELECT bytes_transferred FROM pending_transfers WHERE transfer_id = ?";
-		
-		try (Connection conn = getConnection();
-			 PreparedStatement pstmt = conn.prepareStatement(sql)) {
-			pstmt.setString(1,  transferId);
-			
-			try (ResultSet rs = pstmt.executeQuery()) {
-				if (rs.next()) {
-					return rs.getLong("bytes_transferred");
-				}
-			}
-		} catch (SQLException e) {
-			LOGGER.log(Level.SEVERE, "Error reading resume offset: " + transferId, e);
-		} 
-		
-		return 0L;
-	}
+    
+    private static final Logger LOGGER = Logger.getLogger(DatabaseManager.class.getName());
+    private static final String DB_URL;
+    
+    static {
+        String userHome = System.getProperty("user.home");
+        File appDir = new File(userHome, ".landrop");
+        if (!appDir.exists()) {
+            appDir.mkdirs();
+        }
+        DB_URL = "jdbc:sqlite:" + new File(appDir, "landrop.db").getAbsolutePath();
+    }
+    
+    public static Connection getConnection() throws SQLException {
+        try {
+            Class.forName("org.sqlite.JDBC");
+        } catch (ClassNotFoundException e) {
+            LOGGER.log(Level.SEVERE, "SQLite JDBC Driver missing from classpath!", e);
+            throw new IllegalStateException("SQLite JDBC Driver missing. Ensure sqlite-jdbc dependency is present.", e);
+        }       
+        return DriverManager.getConnection(DB_URL);
+    }
+    
+    public static void initializeDatabase() {
+        String createTransfersTable = "CREATE TABLE IF NOT EXISTS pending_transfers (" +
+                "transfer_id TEXT PRIMARY KEY, " +
+                "file_name TEXT NOT NULL, " +
+                "total_bytes INTEGER NOT NULL, " +
+                "bytes_transferred INTEGER NOT NULL, " +
+                "sha256_hash TEXT NOT NULL, " +
+                "peer_ip TEXT NOT NULL, " +
+                "status TEXT NOT NULL, " +
+                "last_updated INTEGER NOT NULL);";
+        
+        String createPeersTable = "CREATE TABLE IF NOT EXISTS trusted_peers (" +
+                "ip_address TEXT PRIMARY KEY, " +
+                "hostname TEXT NOT NULL, " +
+                "added_at INTEGER NOT NULL);";
+        
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement()) {
+            stmt.execute(createTransfersTable);
+            stmt.execute(createPeersTable);
+            LOGGER.info("SQLite database tables initialized successfully.");
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Failed to initialize SQLite database", e);
+        }
+    }
+    
+    public static void saveCheckpoint(TransferMetadata metadata, String status) {
+        String sql = "INSERT OR REPLACE INTO pending_transfers " +
+                     "(transfer_id, file_name, total_bytes, bytes_transferred, sha256_hash, peer_ip, status, last_updated) " +
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?);";
+        
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, metadata.getTransferId());
+            pstmt.setString(2, metadata.getFileName());
+            pstmt.setLong(3, metadata.getTotalSizeBytes());
+            pstmt.setLong(4, metadata.getBytesTransferred());
+            pstmt.setString(5, metadata.getSha256Hash());
+            pstmt.setString(6, metadata.getPeerIp());
+            pstmt.setString(7, status);
+            pstmt.setLong(8, System.currentTimeMillis());
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Error saving transfer checkpoint: " + metadata.getTransferId(), e);
+        }
+    }
+    
+    public static long getResumeOffset(String transferId) {
+        String sql = "SELECT bytes_transferred FROM pending_transfers WHERE transfer_id = ?";
+        
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, transferId);
+            
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getLong("bytes_transferred");
+                }
+            }
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Error reading resume offset: " + transferId, e);
+        } 
+        
+        return 0L;
+    }
 }
