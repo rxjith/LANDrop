@@ -1,5 +1,8 @@
 package com.landrop.net;
 
+import com.landrop.db.DatabaseManager;
+import com.landrop.model.TransferMetadata;
+
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -34,25 +37,64 @@ public class FileTransferServer {
 
     private void handleIncomingTransfer(Socket socket) {
         new Thread(() -> {
-            try (DataInputStream in = new DataInputStream(socket.getInputStream())) {
+            String peerIp = socket.getInetAddress().getHostAddress();
+            try (
+                DataInputStream in = new DataInputStream(socket.getInputStream());
+                DataOutputStream out = new DataOutputStream(socket.getOutputStream())
+            ) {
+                String transferId = in.readUTF();
                 String fileName = in.readUTF();
                 long fileSize = in.readLong();
+                String sha256 = in.readUTF();
+
+                TransferMetadata metadata = new TransferMetadata(transferId, fileName, fileSize, sha256, peerIp);
+
+                // Fetch previous offset if transfer was interrupted
+                long resumeOffset = DatabaseManager.getResumeOffset(transferId);
+                metadata.setBytesTransferred(resumeOffset);
+
+                out.writeLong(resumeOffset);
+                out.flush();
 
                 File targetFile = new File(downloadDir, fileName);
-                try (FileOutputStream fos = new FileOutputStream(targetFile)) {
-                    byte[] buffer = new byte[8192];
-                    long totalRead = 0;
+                boolean append = resumeOffset > 0 && targetFile.exists();
+
+                try (RandomAccessFile raf = new RandomAccessFile(targetFile, "rw")) {
+                    if (append) {
+                        raf.seek(resumeOffset);
+                    } else {
+                        raf.setLength(0);
+                    }
+
+                    byte[] buffer = new byte[65536];
+                    long totalRead = resumeOffset;
                     int read;
+                    long lastCheckpoint = System.currentTimeMillis();
 
                     while (totalRead < fileSize && (read = in.read(buffer, 0, (int) Math.min(buffer.length, fileSize - totalRead))) != -1) {
-                        fos.write(buffer, 0, read);
+                        raf.write(buffer, 0, read);
                         totalRead += read;
+                        metadata.setBytesTransferred(totalRead);
+
+                        if (System.currentTimeMillis() - lastCheckpoint > 1000) {
+                            DatabaseManager.saveCheckpoint(metadata, "IN_PROGRESS");
+                            lastCheckpoint = System.currentTimeMillis();
+                        }
+                    }
+
+                    if (totalRead == fileSize) {
+                        DatabaseManager.saveCheckpoint(metadata, "COMPLETED");
+                        out.writeUTF("SUCCESS");
+                        System.out.println("\n[FILE RECEIVED] " + fileName + " saved to " + targetFile.getAbsolutePath());
+                    } else {
+                        DatabaseManager.saveCheckpoint(metadata, "INTERRUPTED");
+                        out.writeUTF("FAILED");
                     }
                 }
-                System.out.println("\n[FILE RECEIVED] Saved to " + targetFile.getAbsolutePath());
+                out.flush();
                 System.out.print("> ");
             } catch (IOException e) {
-                System.err.println("[FILE ERROR] Failed receiving: " + e.getMessage());
+                System.err.println("[FILE ERROR] Transfer failed from " + peerIp + ": " + e.getMessage());
             }
         }).start();
     }

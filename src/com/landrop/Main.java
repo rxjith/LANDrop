@@ -4,6 +4,8 @@ import com.landrop.net.FileTransferClient;
 import com.landrop.net.FileTransferServer;
 import com.landrop.net.MulticastDiscoveryService;
 
+import com.landrop.db.DatabaseManager;
+
 import java.io.File;
 import java.net.InetAddress;
 import java.util.Scanner;
@@ -24,6 +26,7 @@ public class Main {
         String portInput = scanner.nextLine().trim();
         int tcpPort = portInput.isEmpty() ? 52145 : Integer.parseInt(portInput);
 
+        DatabaseManager.initializeDatabase();
         MulticastDiscoveryService discoveryService = new MulticastDiscoveryService();
 
         // 1. Initialize and start the background TCP file receiving server
@@ -93,11 +96,14 @@ public class Main {
 
                     new Thread(() -> {
                         try {
-                            System.out.println("[FILE] Sending " + targetFile.getName() + " to " + targetIp + ":" + tcpPort + "...");
-                            FileTransferClient.sendFile(InetAddress.getByName(targetIp), tcpPort, targetFile);
-                            System.out.println("[FILE] Transfer complete: " + targetFile.getName());
+                            System.out.println("[FILE] Streaming " + targetFile.getName() + " to " + targetIp + ":" + tcpPort + "...");
+                            boolean success = FileTransferClient.sendFile(InetAddress.getByName(targetIp), tcpPort, targetFile, (sent, total) -> {
+                                int pct = (int) ((sent * 100) / total);
+                                System.out.printf("\r[Sending %s] %d%% (%d/%d bytes)", targetFile.getName(), pct, sent, total);
+                            });
+                            System.out.println("\n[FILE] Transfer status: " + (success ? "SUCCESS" : "FAILED"));
                         } catch (Exception e) {
-                            System.err.println("[FILE ERROR] Failed sending file: " + e.getMessage());
+                            System.err.println("\n[FILE ERROR] Failed sending file: " + e.getMessage());
                         }
                         System.out.print("> ");
                     }).start();
