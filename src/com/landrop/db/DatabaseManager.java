@@ -60,15 +60,20 @@ public class DatabaseManager {
                 "added_at INTEGER NOT NULL);";
         
         try (Connection conn = getConnection()) {
+            // Set PRAGMA configurations outside of explicit transaction
+            try (Statement stmt = conn.createStatement()) {
+                stmt.execute("PRAGMA journal_mode = WAL;");
+                stmt.execute("PRAGMA synchronous = NORMAL;");
+                stmt.execute("PRAGMA busy_timeout = 5000;");
+            }
+
+            // Execute table creation inside transaction
             conn.setAutoCommit(false);
             try (Statement stmt = conn.createStatement()) {
                 stmt.execute(createTransfersTable);
                 stmt.execute(createPeersTable);
-                stmt.execute("PRAGMA journal_mode = WAL;");
-                stmt.execute("PRAGMA synchronous = NORMAL;");
-                stmt.execute("PRAGMA busy_timeout = 5000;");
                 conn.commit();
-                LOGGER.info("SQLite database initialized with WAL mode enabled.");
+                LOGGER.info("SQLite database initialized successfully with WAL mode.");
             } catch (SQLException e) {
                 conn.rollback();
                 LOGGER.log(Level.SEVERE, "Failed to execute database initialization queries", e);
