@@ -1,6 +1,11 @@
+# Build outputs
 /bin/
 *.class
-.classpath
-.project
-.settings/
+
+# Databases & local state
 landrop.db
+
+# IDE workspace caches
+.settings/
+.vscode/
+*.iml
