@@ -3,22 +3,34 @@ package com.landrop.db;
 import com.landrop.model.TransferMetadata;
 
 import java.io.File;
-import java.sql.*;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class DatabaseManager {
     
     private static final Logger LOGGER = Logger.getLogger(DatabaseManager.class.getName());
-    private static final String DB_URL;
-    
-    static {
-        String userHome = System.getProperty("user.home");
-        File appDir = new File(userHome, ".landrop");
-        if (!appDir.exists()) {
-            appDir.mkdirs();
+    private static String dbUrl;
+
+    private DatabaseManager() {
+        // Prevent instantiation
+    }
+
+    private static synchronized String getDbUrl() {
+        if (dbUrl == null) {
+            String userHome = System.getProperty("user.home");
+            File appDir = new File(userHome, ".landrop");
+            if (!appDir.exists() && !appDir.mkdirs()) {
+                LOGGER.log(Level.SEVERE, "Failed to create application directory at {0}", appDir.getAbsolutePath());
+            }
+            dbUrl = "jdbc:sqlite:" + new File(appDir, "landrop.db").getAbsolutePath();
         }
-        DB_URL = "jdbc:sqlite:" + new File(appDir, "landrop.db").getAbsolutePath();
+        return dbUrl;
     }
     
     public static Connection getConnection() throws SQLException {
@@ -28,7 +40,7 @@ public class DatabaseManager {
             LOGGER.log(Level.SEVERE, "SQLite JDBC Driver missing from classpath!", e);
             throw new IllegalStateException("SQLite JDBC Driver missing. Ensure sqlite-jdbc dependency is present.", e);
         }       
-        return DriverManager.getConnection(DB_URL);
+        return DriverManager.getConnection(getDbUrl());
     }
     
     public static void initializeDatabase() {
@@ -47,20 +59,47 @@ public class DatabaseManager {
                 "hostname TEXT NOT NULL, " +
                 "added_at INTEGER NOT NULL);";
         
-        try (Connection conn = getConnection();
-             Statement stmt = conn.createStatement()) {
-            stmt.execute(createTransfersTable);
-            stmt.execute(createPeersTable);
-            LOGGER.info("SQLite database tables initialized successfully.");
+        try (Connection conn = getConnection()) {
+            // Set PRAGMA configurations outside of explicit transaction
+            try (Statement stmt = conn.createStatement()) {
+                stmt.execute("PRAGMA journal_mode = WAL;");
+                stmt.execute("PRAGMA synchronous = NORMAL;");
+                stmt.execute("PRAGMA busy_timeout = 5000;");
+            }
+
+            // Execute table creation inside transaction
+            conn.setAutoCommit(false);
+            try (Statement stmt = conn.createStatement()) {
+                stmt.execute(createTransfersTable);
+                stmt.execute(createPeersTable);
+                conn.commit();
+                LOGGER.info("SQLite database initialized successfully with WAL mode.");
+            } catch (SQLException e) {
+                conn.rollback();
+                LOGGER.log(Level.SEVERE, "Failed to execute database initialization queries", e);
+            }
         } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "Failed to initialize SQLite database", e);
+            LOGGER.log(Level.SEVERE, "Failed to initialize SQLite database connection", e);
         }
     }
     
     public static void saveCheckpoint(TransferMetadata metadata, String status) {
-        String sql = "INSERT OR REPLACE INTO pending_transfers " +
+        if (metadata == null || metadata.getTransferId() == null) {
+            LOGGER.warning("Attempted to save checkpoint with invalid or null TransferMetadata.");
+            return;
+        }
+
+        String sql = "INSERT INTO pending_transfers " +
                      "(transfer_id, file_name, total_bytes, bytes_transferred, sha256_hash, peer_ip, status, last_updated) " +
-                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?);";
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
+                     "ON CONFLICT(transfer_id) DO UPDATE SET " +
+                     "file_name = excluded.file_name, " +
+                     "total_bytes = excluded.total_bytes, " +
+                     "bytes_transferred = excluded.bytes_transferred, " +
+                     "sha256_hash = excluded.sha256_hash, " +
+                     "peer_ip = excluded.peer_ip, " +
+                     "status = excluded.status, " +
+                     "last_updated = excluded.last_updated;";
         
         try (Connection conn = getConnection();
              PreparedStatement pstmt = conn.prepareStatement(sql)) {
@@ -70,15 +109,19 @@ public class DatabaseManager {
             pstmt.setLong(4, metadata.getBytesTransferred());
             pstmt.setString(5, metadata.getSha256Hash());
             pstmt.setString(6, metadata.getPeerIp());
-            pstmt.setString(7, status);
+            pstmt.setString(7, status != null ? status : "UNKNOWN");
             pstmt.setLong(8, System.currentTimeMillis());
             pstmt.executeUpdate();
         } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "Error saving transfer checkpoint: " + metadata.getTransferId(), e);
+            LOGGER.log(Level.SEVERE, "Error saving transfer checkpoint for ID: " + metadata.getTransferId(), e);
         }
     }
     
     public static long getResumeOffset(String transferId) {
+        if (transferId == null || transferId.trim().isEmpty()) {
+            return 0L;
+        }
+
         String sql = "SELECT bytes_transferred FROM pending_transfers WHERE transfer_id = ?";
         
         try (Connection conn = getConnection();
@@ -91,7 +134,7 @@ public class DatabaseManager {
                 }
             }
         } catch (SQLException e) {
-            LOGGER.log(Level.SEVERE, "Error reading resume offset: " + transferId, e);
+            LOGGER.log(Level.SEVERE, "Error reading resume offset for ID: " + transferId, e);
         } 
         
         return 0L;

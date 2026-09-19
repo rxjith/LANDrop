@@ -2,6 +2,7 @@ package com.landrop.net;
 
 import com.landrop.db.DatabaseManager;
 import com.landrop.model.TransferMetadata;
+import com.landrop.util.HashUtil;
 
 import java.io.*;
 import java.net.ServerSocket;
@@ -49,7 +50,6 @@ public class FileTransferServer {
 
                 TransferMetadata metadata = new TransferMetadata(transferId, fileName, fileSize, sha256, peerIp);
 
-                // Fetch previous offset if transfer was interrupted
                 long resumeOffset = DatabaseManager.getResumeOffset(transferId);
                 metadata.setBytesTransferred(resumeOffset);
 
@@ -83,16 +83,23 @@ public class FileTransferServer {
                     }
 
                     if (totalRead == fileSize) {
-                        DatabaseManager.saveCheckpoint(metadata, "COMPLETED");
-                        out.writeUTF("SUCCESS");
-                        System.out.println("\n[FILE RECEIVED] " + fileName + " saved to " + targetFile.getAbsolutePath());
+                        // Verify Hash before confirming success
+                        String calculatedHash = HashUtil.calculateSHA256(targetFile);
+                        if (calculatedHash.equalsIgnoreCase(sha256)) {
+                            DatabaseManager.saveCheckpoint(metadata, "COMPLETED");
+                            out.writeUTF("SUCCESS");
+                            System.out.println("\n[FILE RECEIVED & VERIFIED] " + fileName + " saved to " + targetFile.getAbsolutePath());
+                        } else {
+                            DatabaseManager.saveCheckpoint(metadata, "CORRUPTED");
+                            out.writeUTF("HASH_MISMATCH");
+                            System.err.println("[FILE ERROR] Corrupted download for " + fileName);
+                        }
                     } else {
                         DatabaseManager.saveCheckpoint(metadata, "INTERRUPTED");
                         out.writeUTF("FAILED");
                     }
                 }
                 out.flush();
-                System.out.print("> ");
             } catch (IOException e) {
                 System.err.println("[FILE ERROR] Transfer failed from " + peerIp + ": " + e.getMessage());
             }

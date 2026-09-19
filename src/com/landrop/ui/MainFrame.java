@@ -17,7 +17,10 @@ import java.io.File;
 import java.net.InetAddress;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 public class MainFrame extends JFrame {
 
@@ -298,21 +301,29 @@ public class MainFrame extends JFrame {
 
     private void startPeerRefreshTimer() {
         Timer timer = new Timer(2000, e -> {
-            PeerDevice currentSelection = peerList.getSelectedValue();
-            peerListModel.clear();
+            Map<String, PeerDevice> activePeers = discoveryService.getActivePeers();
             
-            // Filter self out
-            List<PeerDevice> active = discoveryService.getActivePeers().values().stream()
+            // Filter out self
+            List<PeerDevice> activePeers = activePeersMap.values().stream()
                     .filter(p -> !p.getHostname().equalsIgnoreCase(localDeviceName))
                     .toList();
-
-            active.forEach(peerListModel::addElement);
-            if (radarPanel != null) {
-                radarPanel.updatePeers(active);
+          
+            Set<String> activeIps = activePeers.keySet();
+            for (int i = peerListModel.size() - 1; i >= 0; i--) {
+                PeerDevice device = peerListModel.get(i);
+                if (!activeIps.contains(device.getIpAddress().getHostAddress())) {
+                    peerListModel.remove(i);
+                }
             }
 
-            if (currentSelection != null) {
-                peerList.setSelectedValue(currentSelection, true);
+            for (PeerDevice peer : activePeers) {
+                if (!peerListModel.contains(peer)) {
+                    peerListModel.addElement(peer);
+                }
+            }
+          
+            if (radarPanel != null) {
+                radarPanel.updatePeers(activePeers);
             }
         });
         timer.start();
