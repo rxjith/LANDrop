@@ -72,7 +72,7 @@ The compiled binary will be placed inside the target output directory:
 
 ---
 
-## 🚀 Running LANDrop
+## 🏃 Running LANDrop
 
 Launch the application directly using the fat JAR bundle:
 
