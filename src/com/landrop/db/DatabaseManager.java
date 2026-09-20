@@ -82,6 +82,29 @@ public class DatabaseManager {
             LOGGER.log(Level.SEVERE, "Failed to initialize SQLite database connection", e);
         }
     }
+
+    public static class TransferRecord {
+        public String transferId;
+        public String fileName;
+        public long totalBytes;
+        public long bytesTransferred;
+        public String sha256Hash;
+        public String peerIp;
+        public String status;
+        public long lastUpdated;
+
+        public TransferRecord(String transferId, String fileName, long totalBytes, long bytesTransferred,
+                            String sha256Hash, String peerIp, String status, long lastUpdated) {
+            this.transferId = transferId;
+            this.fileName = fileName;
+            this.totalBytes = totalBytes;
+            this.bytesTransferred = bytesTransferred;
+            this.sha256Hash = sha256Hash;
+            this.peerIp = peerIp;
+            this.status = status;
+            this.lastUpdated = lastUpdated;
+        }
+    }
     
     public static void saveCheckpoint(TransferMetadata metadata, String status) {
         if (metadata == null || metadata.getTransferId() == null) {
@@ -201,5 +224,32 @@ public class DatabaseManager {
                 LOGGER.log(Level.SEVERE, "Error removing trusted peer: " + ipAddress, e);
             }
         }
+    }
+
+    public static java.util.List<TransferRecord> getTransferHistory() {
+        java.util.List<TransferRecord> list = new java.util.ArrayList<>();
+        String sql = "SELECT transfer_id, file_name, total_bytes, bytes_transferred, sha256_hash, peer_ip, status, last_updated " +
+                    "FROM pending_transfers ORDER BY last_updated DESC";
+
+        try (Connection conn = getConnection();
+            Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery(sql)) {
+
+            while (rs.next()) {
+                list.add(new TransferRecord(
+                    rs.getString("transfer_id"),
+                    rs.getString("file_name"),
+                    rs.getLong("total_bytes"),
+                    rs.getLong("bytes_transferred"),
+                    rs.getString("sha256_hash"),
+                    rs.getString("peer_ip"),
+                    rs.getString("status"),
+                    rs.getLong("last_updated")
+                ));
+            }
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Error reading transfer history", e);
+        }
+        return list;
     }
 }
