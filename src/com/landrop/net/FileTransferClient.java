@@ -19,7 +19,7 @@ public class FileTransferClient {
         void onProgress(long bytesSent, long totalBytes);
     }
 
-    public static boolean sendFile(InetAddress targetIp, int targetPort, File file, ProgressCallback callback) throws IOException {
+    public static boolean sendFile(InetAddress targetIp, int targetPort, File file, ProgressCallback callback) throws Exception {
         if (!file.exists()) {
             throw new FileNotFoundException("Target file not found: " + file.getAbsolutePath());
         }
@@ -102,7 +102,7 @@ public class FileTransferClient {
             boolean success = "SUCCESS".equalsIgnoreCase(response);
             DatabaseManager.saveCheckpoint(metadata, success ? "COMPLETED" : "FAILED");
             return success;
-        } catch (IOException e) {
+        } catch (Exception e) {
             DatabaseManager.saveCheckpoint(metadata, "INTERRUPTED");
             throw e;
         }
