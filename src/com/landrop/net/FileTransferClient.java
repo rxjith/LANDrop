@@ -2,6 +2,8 @@ package com.landrop.net;
 
 import com.landrop.db.DatabaseManager;
 import com.landrop.model.TransferMetadata;
+import com.landrop.util.AppConfig;
+import com.landrop.util.CryptoUtil;
 import com.landrop.util.HashUtil;
 import com.landrop.util.ZipUtil;
 
@@ -27,9 +29,15 @@ public class FileTransferClient {
         TransferMetadata metadata = new TransferMetadata(transferId, file.getName(), file.length(), hash, targetIp.getHostAddress());
 
         try (Socket socket = new Socket(targetIp, targetPort);
-             DataOutputStream out = new DataOutputStream(socket.getOutputStream());
-             DataInputStream in = new DataInputStream(socket.getInputStream());
-             FileInputStream fis = new FileInputStream(file)) {
+            // Wrap the socket output stream with AES Encryption
+            OutputStream encryptedOut = CryptoUtil.wrapEncryptedOutput(socket.getOutputStream());
+            DataOutputStream out = new DataOutputStream(encryptedOut);
+            
+            // Wrap the socket input stream with AES Decryption
+            InputStream decryptedIn = CryptoUtil.wrapDecryptedInput(socket.getInputStream());
+            DataInputStream in = new DataInputStream(decryptedIn);
+            
+            FileInputStream fis = new FileInputStream(file)) {
 
             // Header handshake: ID | Name | Size | Hash
             out.writeUTF(transferId);
@@ -52,20 +60,37 @@ public class FileTransferClient {
 
             DatabaseManager.saveCheckpoint(metadata, "IN_PROGRESS");
 
-            byte[] buffer = new byte[65536]; // 64 KB buffer
+            byte[] buffer = new byte[65536]; // 64 KB stream chunk
             long totalRead = metadata.getBytesTransferred();
             int bytesRead;
             long lastCheckpoint = System.currentTimeMillis();
 
+            long transferStartTime = System.currentTimeMillis();
+            long bytesSentSinceStart = 0;
+
             while ((bytesRead = fis.read(buffer)) != -1) {
                 out.write(buffer, 0, bytesRead);
                 totalRead += bytesRead;
+                bytesSentSinceStart += bytesRead;
                 metadata.setBytesTransferred(totalRead);
 
                 if (callback != null) {
                     callback.onProgress(totalRead, file.length());
                 }
 
+                // Bandwidth Throttling Logic
+                int speedLimitKbps = AppConfig.getBandwidthLimitKbps();
+                if (speedLimitKbps > 0) {
+                    long expectedMs = (bytesSentSinceStart * 1000L) / ((long) speedLimitKbps * 1024L);
+                    long actualMs = System.currentTimeMillis() - transferStartTime;
+                    if (expectedMs > actualMs) {
+                        try {
+                            Thread.sleep(expectedMs - actualMs);
+                        } catch (InterruptedException ignored) {}
+                    }
+                }
+
+                // SQLite Checkpoint sync (every 1 second)
                 if (System.currentTimeMillis() - lastCheckpoint > 1000) {
                     DatabaseManager.saveCheckpoint(metadata, "IN_PROGRESS");
                     lastCheckpoint = System.currentTimeMillis();
@@ -82,7 +107,7 @@ public class FileTransferClient {
             throw e;
         }
     }
-    
+
     public interface BatchProgressCallback {
         void onFileStart(String fileName, int currentIndex, int totalFiles);
         void onFileProgress(long bytesSent, long totalBytes);

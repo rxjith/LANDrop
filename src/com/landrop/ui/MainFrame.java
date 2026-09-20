@@ -7,7 +7,8 @@ import com.landrop.net.ChatManager;
 import com.landrop.net.FileTransferClient;
 import com.landrop.net.FileTransferServer;
 import com.landrop.net.MulticastDiscoveryService;
-
+import com.landrop.util.AppConfig;
+import com.landrop.util.TransferMetrics;
 
 import javax.swing.*;
 import java.awt.*;
@@ -15,8 +16,6 @@ import java.awt.datatransfer.DataFlavor;
 import java.awt.dnd.*;
 import java.io.File;
 import java.net.InetAddress;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 
 public class MainFrame extends JFrame {
@@ -27,7 +26,6 @@ public class MainFrame extends JFrame {
     // Backend Services
     private MulticastDiscoveryService discoveryService;
     private FileTransferServer fileServer;
-    private final int localTcpPort = 52145;
     private String localDeviceName;
     private ChatManager chatManager;
 
@@ -61,7 +59,7 @@ public class MainFrame extends JFrame {
         cardLayout.show(rootPanel, "WELCOME");
     }
 
-    //CARD 1: WELCOME & ONBOARDING
+    // CARD 1: WELCOME & ONBOARDING
     private JPanel buildWelcomeCard() {
         JPanel panel = new JPanel(new GridBagLayout());
         panel.setBackground(new Color(24, 26, 31));
@@ -121,12 +119,6 @@ public class MainFrame extends JFrame {
         peerList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         sidebar.add(new JScrollPane(peerList), BorderLayout.CENTER);
 
-        JButton historyBtn = new JButton("Transfer History");
-        historyBtn.addActionListener(e -> {
-            TransferHistoryDialog dialog = new TransferHistoryDialog(MainFrame.this, localTcpPort);
-            dialog.setVisible(true);
-        });
-
         JButton connectBtn = new JButton("Open Direct Transfer Room");
         connectBtn.addActionListener(e -> {
             PeerDevice selected = peerList.getSelectedValue();
@@ -137,10 +129,20 @@ public class MainFrame extends JFrame {
             enterTransferRoom(selected);
         });
 
-        // Add both action buttons to a bottom panel inside sidebar
-        JPanel bottomBtnPanel = new JPanel(new GridLayout(2, 1, 5, 5));
+        JButton historyBtn = new JButton("Transfer History");
+        historyBtn.addActionListener(e -> {
+            TransferHistoryDialog dialog = new TransferHistoryDialog(MainFrame.this, AppConfig.getTcpPort());
+            dialog.setVisible(true);
+        });
+
+        JButton settingsBtn = new JButton("Settings");
+        settingsBtn.addActionListener(e -> new SettingsDialog(MainFrame.this).setVisible(true));
+
+        // Add action buttons to bottom sidebar panel
+        JPanel bottomBtnPanel = new JPanel(new GridLayout(3, 1, 5, 5));
         bottomBtnPanel.add(connectBtn);
         bottomBtnPanel.add(historyBtn);
+        bottomBtnPanel.add(settingsBtn);
         sidebar.add(bottomBtnPanel, BorderLayout.SOUTH);
 
         panel.add(radarPanel, BorderLayout.CENTER);
@@ -148,25 +150,32 @@ public class MainFrame extends JFrame {
         return panel;
     }
 
-    //CARD 3: CHAT & DIRECT FILE TRANSFER ROOM 
+    // CARD 3: CHAT & DIRECT FILE TRANSFER ROOM 
     private JPanel buildTransferCard() {
         JPanel panel = new JPanel(new BorderLayout(10, 10));
         panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
         // Top Header
-        JPanel topBar = new JPanel(new BorderLayout());
+        JPanel topBar = new JPanel(new BorderLayout(5, 5));
         JButton backBtn = new JButton("← Back to Radar");
         backBtn.addActionListener(e -> cardLayout.show(rootPanel, "DISCOVERY"));
 
+        JPanel rightTopPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
         JButton roomHistoryBtn = new JButton("Transfer History");
-        roomHistoryBtn.addActionListener(e -> new TransferHistoryDialog(MainFrame.this, localTcpPort).setVisible(true));
+        roomHistoryBtn.addActionListener(e -> new TransferHistoryDialog(MainFrame.this, AppConfig.getTcpPort()).setVisible(true));
+
+        JButton roomSettingsBtn = new JButton("Settings");
+        roomSettingsBtn.addActionListener(e -> new SettingsDialog(MainFrame.this).setVisible(true));
+
+        rightTopPanel.add(roomHistoryBtn);
+        rightTopPanel.add(roomSettingsBtn);
 
         transferHeaderLabel = new JLabel("Direct Session: Not Connected", SwingConstants.CENTER);
         transferHeaderLabel.setFont(new Font("Segoe UI", Font.BOLD, 15));
 
         topBar.add(backBtn, BorderLayout.WEST);
         topBar.add(transferHeaderLabel, BorderLayout.CENTER);
-        topBar.add(roomHistoryBtn, BorderLayout.EAST);
+        topBar.add(rightTopPanel, BorderLayout.EAST);
         panel.add(topBar, BorderLayout.NORTH);
 
         // Center split: Chat Console on Left, Drop Zone on Right
@@ -188,7 +197,6 @@ public class MainFrame extends JFrame {
                 chatLogArea.append("[" + localDeviceName + "]: " + text + "\n");
                 chatInputField.setText("");
                 
-                // Dispatch over the network to the active peer
                 if (targetPeer != null && targetPeer.getIpAddress() != null) {
                     ChatManager.sendMessageAsync(
                         targetPeer.getIpAddress().getHostAddress(), 
@@ -239,11 +247,23 @@ public class MainFrame extends JFrame {
 
     private void initBackend(String deviceName) {
         DatabaseManager.initializeDatabase();
-        Path downloadDir = Paths.get(System.getProperty("user.home"), "Downloads", "LANDrop");
-        fileServer = new FileTransferServer(localTcpPort, downloadDir.toString());
 
-        // Prompt receiver before saving files from untrusted peers
+        int tcpPort = AppConfig.getTcpPort();
+        String downloadDir = AppConfig.getDownloadDir();
+
+        fileServer = new FileTransferServer(tcpPort, downloadDir);
+
         fileServer.setAcceptanceListener((peerIp, fileName, fileSize) -> {
+            // Auto-accept if peer is trusted and auto-accept option is enabled
+            if (AppConfig.isAutoAcceptTrusted() && DatabaseManager.isPeerTrusted(peerIp)) {
+                TrayManager.showNotification(
+                    "Receiving File", 
+                    "Auto-accepting " + fileName + " from trusted peer " + peerIp, 
+                    TrayIcon.MessageType.INFO
+                );
+                return true;
+            }
+
             try {
                 final boolean[] accepted = new boolean[1];
                 SwingUtilities.invokeAndWait(() -> {
@@ -288,7 +308,7 @@ public class MainFrame extends JFrame {
         }
 
         discoveryService = new MulticastDiscoveryService();
-        discoveryService.start(deviceName, localTcpPort);
+        discoveryService.start(deviceName, tcpPort);
 
         chatManager = new ChatManager(incomingMsg -> {
             SwingUtilities.invokeLater(() -> {
@@ -296,8 +316,11 @@ public class MainFrame extends JFrame {
                     chatLogArea.append(incomingMsg + "\n");
                 }
             });
+            TrayManager.showNotification("New Message", incomingMsg, TrayIcon.MessageType.INFO);
         });
         chatManager.startServer();
+
+        TrayManager.initializeTray(this);
     }
 
     private void setupDragAndDrop(JPanel dropZone) {
@@ -325,40 +348,18 @@ public class MainFrame extends JFrame {
         });
     }
 
-    private void sendFileToPeer(PeerDevice peer, File file) {
-        new Thread(() -> {
-            try {
-                SwingUtilities.invokeLater(() -> statusLabel.setText("Streaming " + file.getName() + "..."));
-
-                boolean success = FileTransferClient.sendFile(peer.getIpAddress(), peer.getPort() > 0 ? peer.getPort() : localTcpPort, file, (sent, total) -> {
-                    int pct = (int) ((sent * 100) / total);
-                    SwingUtilities.invokeLater(() -> progressBar.setValue(pct));
-                });
-
-                SwingUtilities.invokeLater(() -> {
-                    statusLabel.setText(success ? "Transfer complete: " + file.getName() : "Transfer failed.");
-                    progressBar.setValue(success ? 100 : 0);
-                    if (success) {
-                        chatLogArea.append("[System]: Successfully sent file '" + file.getName() + "'\n");
-                    }
-                });
-            } catch (Exception e) {
-                SwingUtilities.invokeLater(() -> {
-                    statusLabel.setText("Error: " + e.getMessage());
-                    progressBar.setValue(0);
-                });
-            }
-        }, "FileSenderThread").start();
-    }
-
     private void sendBatchToPeer(PeerDevice peer, List<File> files) {
+        TransferMetrics metrics = new TransferMetrics();
+        int targetPort = peer.getPort() > 0 ? peer.getPort() : AppConfig.getTcpPort();
+
         FileTransferClient.sendBatch(
             peer.getIpAddress(),
-            peer.getPort() > 0 ? peer.getPort() : localTcpPort,
+            targetPort,
             files,
             new FileTransferClient.BatchProgressCallback() {
                 @Override
                 public void onFileStart(String fileName, int currentIndex, int totalFiles) {
+                    metrics.start();
                     SwingUtilities.invokeLater(() -> {
                         statusLabel.setText(String.format("Sending [%d/%d]: %s", currentIndex, totalFiles, fileName));
                         progressBar.setValue(0);
@@ -368,7 +369,12 @@ public class MainFrame extends JFrame {
                 @Override
                 public void onFileProgress(long bytesSent, long totalBytes) {
                     int pct = (int) ((bytesSent * 100) / totalBytes);
-                    SwingUtilities.invokeLater(() -> progressBar.setValue(pct));
+                    String metricsText = metrics.getFormattedProgress(bytesSent, totalBytes);
+                    
+                    SwingUtilities.invokeLater(() -> {
+                        progressBar.setValue(pct);
+                        statusLabel.setText(String.format("Transferring: %d%% (%s)", pct, metricsText));
+                    });
                 }
 
                 @Override
@@ -378,11 +384,16 @@ public class MainFrame extends JFrame {
                         progressBar.setValue(failedCount == 0 ? 100 : 0);
                         chatLogArea.append(String.format("[System]: Batch transfer finished (%d succeeded, %d failed)\n", successCount, failedCount));
                     });
+
+                    TrayManager.showNotification(
+                        "Transfer Complete",
+                        String.format("Sent %d files (%d failed)", successCount, failedCount),
+                        failedCount == 0 ? TrayIcon.MessageType.INFO : TrayIcon.MessageType.WARNING
+                    );
                 }
             }
         );
     }
-
 
     private void startPeerRefreshTimer() {
         Timer timer = new Timer(2000, e -> {

@@ -2,6 +2,7 @@ package com.landrop.net;
 
 import com.landrop.db.DatabaseManager;
 import com.landrop.model.TransferMetadata;
+import com.landrop.util.CryptoUtil;
 import com.landrop.util.HashUtil;
 
 import java.io.*;
@@ -51,8 +52,13 @@ public class FileTransferServer {
         new Thread(() -> {
             String peerIp = socket.getInetAddress().getHostAddress();
             try (
-                DataInputStream in = new DataInputStream(socket.getInputStream());
-                DataOutputStream out = new DataOutputStream(socket.getOutputStream())
+                // Wrap socket input stream with AES Decryption
+                InputStream decryptedIn = CryptoUtil.wrapDecryptedInput(socket.getInputStream());
+                DataInputStream in = new DataInputStream(decryptedIn);
+                
+                // Wrap socket output stream with AES Encryption
+                OutputStream encryptedOut = CryptoUtil.wrapEncryptedOutput(socket.getOutputStream());
+                DataOutputStream out = new DataOutputStream(encryptedOut)
             ) {
                 String transferId = in.readUTF();
                 String fileName = in.readUTF();
@@ -128,8 +134,8 @@ public class FileTransferServer {
                     }
                 }
                 out.flush();
-            } catch (IOException e) {
-                System.err.println("[FILE ERROR] Transfer failed from " + peerIp + ": " + e.getMessage());
+            } catch (Exception e) {
+                System.err.println("[FILE ERROR] Encrypted transfer failed from " + peerIp + ": " + e.getMessage());
             }
         }).start();
     }
