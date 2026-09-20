@@ -108,7 +108,7 @@ public class MainFrame extends JFrame {
         return panel;
     }
 
-    //CARD 2: RADAR & PEER DISCOVERY
+    // CARD 2: RADAR & PEER DISCOVERY
     private JPanel buildDiscoveryCard() {
         JPanel panel = new JPanel(new BorderLayout(10, 10));
         radarPanel = new RadarPanel();
@@ -121,6 +121,12 @@ public class MainFrame extends JFrame {
         peerList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         sidebar.add(new JScrollPane(peerList), BorderLayout.CENTER);
 
+        JButton historyBtn = new JButton("Transfer History");
+        historyBtn.addActionListener(e -> {
+            TransferHistoryDialog dialog = new TransferHistoryDialog(MainFrame.this, localTcpPort);
+            dialog.setVisible(true);
+        });
+
         JButton connectBtn = new JButton("Open Direct Transfer Room");
         connectBtn.addActionListener(e -> {
             PeerDevice selected = peerList.getSelectedValue();
@@ -130,7 +136,12 @@ public class MainFrame extends JFrame {
             }
             enterTransferRoom(selected);
         });
-        sidebar.add(connectBtn, BorderLayout.SOUTH);
+
+        // Add both action buttons to a bottom panel inside sidebar
+        JPanel bottomBtnPanel = new JPanel(new GridLayout(2, 1, 5, 5));
+        bottomBtnPanel.add(connectBtn);
+        bottomBtnPanel.add(historyBtn);
+        sidebar.add(bottomBtnPanel, BorderLayout.SOUTH);
 
         panel.add(radarPanel, BorderLayout.CENTER);
         panel.add(sidebar, BorderLayout.EAST);
@@ -147,11 +158,15 @@ public class MainFrame extends JFrame {
         JButton backBtn = new JButton("← Back to Radar");
         backBtn.addActionListener(e -> cardLayout.show(rootPanel, "DISCOVERY"));
 
-        transferHeaderLabel = new JLabel("Direct Session: Not Connected");
+        JButton roomHistoryBtn = new JButton("Transfer History");
+        roomHistoryBtn.addActionListener(e -> new TransferHistoryDialog(MainFrame.this, localTcpPort).setVisible(true));
+
+        transferHeaderLabel = new JLabel("Direct Session: Not Connected", SwingConstants.CENTER);
         transferHeaderLabel.setFont(new Font("Segoe UI", Font.BOLD, 15));
 
         topBar.add(backBtn, BorderLayout.WEST);
         topBar.add(transferHeaderLabel, BorderLayout.CENTER);
+        topBar.add(roomHistoryBtn, BorderLayout.EAST);
         panel.add(topBar, BorderLayout.NORTH);
 
         // Center split: Chat Console on Left, Drop Zone on Right
