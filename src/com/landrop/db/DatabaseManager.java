@@ -139,4 +139,67 @@ public class DatabaseManager {
         
         return 0L;
     }
+    
+    public static java.util.Set<String> getAllTrustedIpAddresses() {
+        java.util.Set<String> trustedIps = new java.util.HashSet<>();
+        String sql = "SELECT ip_address FROM trusted_peers";
+        try (Connection conn = getConnection();
+            Statement stmt = conn.createStatement();
+            ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                trustedIps.add(rs.getString("ip_address"));
+            }
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Error retrieving trusted peers list", e);
+        }
+        return trustedIps;
+    }
+
+    public static boolean isPeerTrusted(String ipAddress) {
+        if (ipAddress == null || ipAddress.trim().isEmpty()) {
+            return false;
+        }
+
+        String sql = "SELECT 1 FROM trusted_peers WHERE ip_address = ?";
+        try (Connection conn = getConnection();
+            PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, ipAddress);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            LOGGER.log(Level.SEVERE, "Error checking trust status for IP: " + ipAddress, e);
+            return false;
+        }
+    }
+
+    public static void setPeerTrust(String ipAddress, String hostname, boolean trusted) {
+        if (ipAddress == null || ipAddress.trim().isEmpty()) {
+            LOGGER.warning("Attempted to set peer trust for invalid IP address.");
+            return;
+        }
+
+        if (trusted) {
+            String sql = "INSERT INTO trusted_peers (ip_address, hostname, added_at) VALUES (?, ?, ?) " +
+                        "ON CONFLICT(ip_address) DO UPDATE SET hostname = excluded.hostname;";
+            try (Connection conn = getConnection();
+                PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, ipAddress);
+                pstmt.setString(2, hostname);
+                pstmt.setLong(3, System.currentTimeMillis());
+                pstmt.executeUpdate();
+            } catch (SQLException e) {
+                LOGGER.log(Level.SEVERE, "Error saving trusted peer: " + ipAddress, e);
+            }
+        } else {
+            String sql = "DELETE FROM trusted_peers WHERE ip_address = ?";
+            try (Connection conn = getConnection();
+                PreparedStatement pstmt = conn.prepareStatement(sql)) {
+                pstmt.setString(1, ipAddress);
+                pstmt.executeUpdate();
+            } catch (SQLException e) {
+                LOGGER.log(Level.SEVERE, "Error removing trusted peer: " + ipAddress, e);
+            }
+        }
+    }
 }

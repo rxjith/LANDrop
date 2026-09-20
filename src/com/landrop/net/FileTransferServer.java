@@ -9,14 +9,25 @@ import java.net.ServerSocket;
 import java.net.Socket;
 
 public class FileTransferServer {
+
+    @FunctionalInterface
+    public interface TransferAcceptanceListener {
+        boolean onRequestTransfer(String peerIp, String fileName, long fileSize);
+    }
+
     private final int port;
     private final String downloadDir;
     private ServerSocket serverSocket;
     private volatile boolean running = false;
+    private TransferAcceptanceListener acceptanceListener;
 
     public FileTransferServer(int port, String downloadDir) {
         this.port = port;
         this.downloadDir = downloadDir;
+    }
+
+    public void setAcceptanceListener(TransferAcceptanceListener listener) {
+        this.acceptanceListener = listener;
     }
 
     public void start() throws IOException {
@@ -48,11 +59,28 @@ public class FileTransferServer {
                 long fileSize = in.readLong();
                 String sha256 = in.readUTF();
 
+                // 1. Check if peer is trusted; if not, ask for permission
+                boolean isTrusted = DatabaseManager.isPeerTrusted(peerIp);
+                boolean accepted = isTrusted;
+
+                if (!isTrusted && acceptanceListener != null) {
+                    accepted = acceptanceListener.onRequestTransfer(peerIp, fileName, fileSize);
+                }
+
+                // 2. If rejected, signal -1L and abort
+                if (!accepted) {
+                    out.writeLong(-1L);
+                    out.flush();
+                    System.out.println("[FILE SERVER] Declined incoming transfer: " + fileName + " from " + peerIp);
+                    return;
+                }
+
                 TransferMetadata metadata = new TransferMetadata(transferId, fileName, fileSize, sha256, peerIp);
 
                 long resumeOffset = DatabaseManager.getResumeOffset(transferId);
                 metadata.setBytesTransferred(resumeOffset);
 
+                // Send actual resume offset back to client
                 out.writeLong(resumeOffset);
                 out.flush();
 

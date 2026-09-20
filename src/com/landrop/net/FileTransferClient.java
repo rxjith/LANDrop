@@ -36,8 +36,13 @@ public class FileTransferClient {
             out.writeUTF(hash);
             out.flush();
 
-            // Read resume offset from receiver
+            // Read resume offset or acceptance status from receiver
             long offset = in.readLong();
+            if (offset == -1L) {
+                DatabaseManager.saveCheckpoint(metadata, "DECLINED");
+                throw new IOException("Transfer request was declined by the remote peer.");
+            }
+
             if (offset > 0 && offset < file.length()) {
                 fis.skip(offset);
                 metadata.setBytesTransferred(offset);
