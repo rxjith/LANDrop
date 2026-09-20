@@ -16,6 +16,7 @@ import java.awt.datatransfer.DataFlavor;
 import java.awt.dnd.*;
 import java.io.File;
 import java.net.InetAddress;
+import java.net.URL;
 import java.util.List;
 
 public class MainFrame extends JFrame {
@@ -48,8 +49,19 @@ public class MainFrame extends JFrame {
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
 
+        loadWindowIcon();
         initViews();
         add(rootPanel);
+    }
+
+    private void loadWindowIcon() {
+        URL iconUrl = getClass().getResource("/LANDrop Icon (final).png");
+        if (iconUrl != null) {
+            Image appIcon = new ImageIcon(iconUrl).getImage();
+            setIconImage(appIcon);
+        } else {
+            System.err.println("[MainFrame] Warning: App icon '/LANDrop Icon (final).png' not found in classpath.");
+        }
     }
 
     private void initViews() {

@@ -29,7 +29,9 @@ public class TrayManager {
         }
 
         Image image = null;
-        URL iconUrl = TrayManager.class.getResource("/icon.png");
+
+        // Load custom application icon
+        URL iconUrl = TrayManager.class.getResource("/LANDrop Icon (final).png");
 
         if (iconUrl != null) {
             image = new ImageIcon(iconUrl).getImage();
