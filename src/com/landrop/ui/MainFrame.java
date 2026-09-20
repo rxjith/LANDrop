@@ -226,6 +226,46 @@ public class MainFrame extends JFrame {
         DatabaseManager.initializeDatabase();
         Path downloadDir = Paths.get(System.getProperty("user.home"), "Downloads", "LANDrop");
         fileServer = new FileTransferServer(localTcpPort, downloadDir.toString());
+
+        // Prompt receiver before saving files from untrusted peers
+        fileServer.setAcceptanceListener((peerIp, fileName, fileSize) -> {
+            try {
+                final boolean[] accepted = new boolean[1];
+                SwingUtilities.invokeAndWait(() -> {
+                    String sizeStr = String.format("%.2f MB", fileSize / (1024.0 * 1024.0));
+                    
+                    JCheckBox trustCheckbox = new JCheckBox("Always trust this peer (" + peerIp + ")");
+                    Object[] message = {
+                        "Incoming file transfer from " + peerIp + ":",
+                        "File: " + fileName,
+                        "Size: " + sizeStr,
+                        "\nDo you want to accept this file?",
+                        trustCheckbox
+                    };
+
+                    int choice = JOptionPane.showConfirmDialog(
+                        MainFrame.this,
+                        message,
+                        "Incoming Transfer Request",
+                        JOptionPane.YES_NO_OPTION,
+                        JOptionPane.QUESTION_MESSAGE
+                    );
+
+                    if (choice == JOptionPane.YES_OPTION) {
+                        accepted[0] = true;
+                        if (trustCheckbox.isSelected()) {
+                            DatabaseManager.setPeerTrust(peerIp, peerIp, true);
+                        }
+                    } else {
+                        accepted[0] = false;
+                    }
+                });
+                return accepted[0];
+            } catch (Exception e) {
+                return false;
+            }
+        });
+
         try {
             fileServer.start();
         } catch (Exception e) {
