@@ -1,6 +1,8 @@
 package com.landrop.net;
 
 import com.landrop.model.PeerDevice;
+import com.landrop.util.AppConfig;
+
 import java.io.IOException;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
@@ -38,6 +40,7 @@ public class MulticastDiscoveryService {
         if (running) return; 
         this.running = true;
         this.localTcpPort = tcpPort;
+        this.stealthMode = AppConfig.isStealthMode();
 
         try {
             groupAddress = InetAddress.getByName(MULTICAST_GROUP); 
@@ -118,10 +121,6 @@ public class MulticastDiscoveryService {
 
                 InetAddress senderIp = packet.getAddress();
 
-                if (stealthMode) {
-                    continue; 
-                }
-
                 if (senderIp.isLoopbackAddress() || isLocalAddress(senderIp)) {
                     continue; 
                 }
@@ -149,7 +148,6 @@ public class MulticastDiscoveryService {
                         continue; 
                     }
 
-                    // FIXED: Always key activePeers by sender IP address
                     String ipKey = senderIp.getHostAddress(); 
                     final String resolvedHostname = hostname;
                     final int tcpPort = parsedPort;
@@ -203,7 +201,9 @@ public class MulticastDiscoveryService {
     private void broadcastLoop(String deviceName) {
         while (running) {
             try {
-                if (!stealthMode && socket != null && !socket.isClosed()) {
+                // Halt outgoing beacons when stealth mode is enabled (programmatically or in config)
+                boolean currentStealth = stealthMode || AppConfig.isStealthMode();
+                if (!currentStealth && socket != null && !socket.isClosed()) {
                     String beacon = String.format("DISCOVER:%s:%s:%d", instanceId, deviceName, localTcpPort); 
                     byte[] data = beacon.getBytes(StandardCharsets.UTF_8);
                     sendMulticastPacket(data);
@@ -232,7 +232,7 @@ public class MulticastDiscoveryService {
     }
 
     public void sendSubnetChat(String deviceName, String message) {
-        if (stealthMode || !running || socket == null || socket.isClosed()) return;
+        if (stealthMode || AppConfig.isStealthMode() || !running || socket == null || socket.isClosed()) return;
         try {
             String payload = "CHAT:" + instanceId + ":" + deviceName + ":" + message;
             byte[] data = payload.getBytes(StandardCharsets.UTF_8);
@@ -242,7 +242,6 @@ public class MulticastDiscoveryService {
         }
     }
 
-    // Helper method to eliminate duplicate multicast sending logic
     private void sendMulticastPacket(byte[] data) {
         if (joinedInterfaces.isEmpty()) {
             try {
@@ -262,10 +261,11 @@ public class MulticastDiscoveryService {
 
     public void setStealthMode(boolean enabled) { 
         this.stealthMode = enabled;
+        AppConfig.setStealthMode(enabled);
     }
 
     public boolean isStealthMode() { 
-        return stealthMode;
+        return stealthMode || AppConfig.isStealthMode();
     }
 
     public Map<String, PeerDevice> getActivePeers() { 
@@ -284,7 +284,7 @@ public class MulticastDiscoveryService {
         if (cleanerThread != null) cleanerThread.interrupt();
 
         try {
-            if (socket != null && !socket.isClosed()) {
+            if (socket != null && !socket.isClosed() && !isStealthMode()) {
                 String byePayload = "BYE:" + instanceId;
                 byte[] data = byePayload.getBytes(StandardCharsets.UTF_8);
                 sendMulticastPacket(data);
