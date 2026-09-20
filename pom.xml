@@ -10,8 +10,7 @@
     <packaging>jar</packaging>
 
     <properties>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.release>17</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
@@ -44,18 +43,31 @@
     </dependencies>
 
     <build>
-        <!-- Tells Maven your source code resides directly in 'src/' rather than 'src/main/java/' -->
+        <!-- Custom source directory location -->
         <sourceDirectory>src</sourceDirectory>
 
+        <!-- Configuration to package non-Java assets (icons, images) into the JAR -->
+        <resources>
+            <resource>
+                <directory>src/resources</directory>
+                <includes>
+                    <include>**/*</include>
+                </includes>
+            </resource>
+        </resources>
+
         <plugins>
-            <!-- Java Compiler Plugin -->
+            <!-- Java Compiler Plugin targeting JDK 17 release -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.11.0</version>
+                <configuration>
+                    <release>17</release>
+                </configuration>
             </plugin>
 
-            <!-- Maven Assembly Plugin to build executable Fat JAR -->
+            <!-- Maven Assembly Plugin configured for MainFrame GUI entry point -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-assembly-plugin</artifactId>
@@ -63,7 +75,7 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>com.landrop.Main</mainClass>
+                            <mainClass>com.landrop.ui.MainFrame</mainClass>
                         </manifest>
                     </archive>
                     <descriptorRefs>
