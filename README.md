@@ -2,7 +2,7 @@
   <img src="src/resources/LANDrop-icon.png" alt="LANDrop Icon" width="128"/>
 </p>
 
-# LANDrop 🚀
+# LANDrop
 
 > **Zero-configuration, high-speed P2P file transfers and local network workspace sync.**
 
