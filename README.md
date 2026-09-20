@@ -1,3 +1,7 @@
+<p align="left">
+  <img src="src/resources/LANDrop-icon.png" alt="LANDrop Icon" width="128"/>
+</p>
+
 # LANDrop 🚀
 
 > **Zero-configuration, high-speed P2P file transfers and local network workspace sync.**
@@ -36,12 +40,15 @@ LANDrop is a lightweight, serverless peer-to-peer file-sharing engine and subnet
 ```text
 LANDrop/
 ├── lib/                   # Pre-packaged local library JARs
-├── src/com/landrop/
-│   ├── db/                # SQLite connection pool & migration helpers
-│   ├── model/             # Entities (PeerDevice, TransferMetadata)
-│   ├── net/               # Core networking (TCP sockets, UDP discovery, Chat)
-│   ├── ui/                # Swing GUI components (MainFrame, RadarPanel, TrayManager)
-│   └── util/              # Utilities (Crypto, Hashing, Zip, AppConfig)
+├── src/
+│   ├── resources/         # Application icons and assets
+│   │   └── LANDrop Icon (final).png
+│   └── com/landrop/
+│       ├── db/            # SQLite connection pool & migration helpers
+│       ├── model/         # Entities (PeerDevice, TransferMetadata)
+│       ├── net/           # Core networking (TCP sockets, UDP discovery, Chat)
+│       ├── ui/            # Swing GUI components (MainFrame, RadarPanel, TrayManager)
+│       └── util/          # Utilities (Crypto, Hashing, Zip, AppConfig)
 └── pom.xml                # Maven build definition & assembly manifest
 ```
 
