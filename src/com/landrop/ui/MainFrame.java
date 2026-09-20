@@ -301,7 +301,7 @@ public class MainFrame extends JFrame {
                     List<File> droppedFiles = (List<File>) dtde.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
 
                     if (!droppedFiles.isEmpty()) {
-                        sendFileToPeer(targetPeer, droppedFiles.get(0));
+                        sendBatchToPeer(targetPeer, droppedFiles);
                     }
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -335,6 +335,39 @@ public class MainFrame extends JFrame {
             }
         }, "FileSenderThread").start();
     }
+
+    private void sendBatchToPeer(PeerDevice peer, List<File> files) {
+        FileTransferClient.sendBatch(
+            peer.getIpAddress(),
+            peer.getPort() > 0 ? peer.getPort() : localTcpPort,
+            files,
+            new FileTransferClient.BatchProgressCallback() {
+                @Override
+                public void onFileStart(String fileName, int currentIndex, int totalFiles) {
+                    SwingUtilities.invokeLater(() -> {
+                        statusLabel.setText(String.format("Sending [%d/%d]: %s", currentIndex, totalFiles, fileName));
+                        progressBar.setValue(0);
+                    });
+                }
+
+                @Override
+                public void onFileProgress(long bytesSent, long totalBytes) {
+                    int pct = (int) ((bytesSent * 100) / totalBytes);
+                    SwingUtilities.invokeLater(() -> progressBar.setValue(pct));
+                }
+
+                @Override
+                public void onBatchComplete(int successCount, int failedCount) {
+                    SwingUtilities.invokeLater(() -> {
+                        statusLabel.setText(String.format("Batch complete! Sent: %d, Failed: %d", successCount, failedCount));
+                        progressBar.setValue(failedCount == 0 ? 100 : 0);
+                        chatLogArea.append(String.format("[System]: Batch transfer finished (%d succeeded, %d failed)\n", successCount, failedCount));
+                    });
+                }
+            }
+        );
+    }
+
 
     private void startPeerRefreshTimer() {
         Timer timer = new Timer(2000, e -> {
