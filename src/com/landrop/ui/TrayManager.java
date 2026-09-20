@@ -30,14 +30,15 @@ public class TrayManager {
 
         Image image = null;
 
-        // Load custom application icon
-        URL iconUrl = TrayManager.class.getResource("/LANDrop Icon (final).png");
+        // Load renamed application icon resource from classpath
+        URL iconUrl = TrayManager.class.getResource("/LANDrop-icon.png");
 
         if (iconUrl != null) {
             image = new ImageIcon(iconUrl).getImage();
         } else if (mainFrame != null && mainFrame.getIconImage() != null) {
             image = mainFrame.getIconImage();
         } else {
+            System.err.println("[TrayManager] Warning: '/LANDrop-icon.png' resource not found. Using fallback blank image.");
             image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
         }
 
