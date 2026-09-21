@@ -55,12 +55,12 @@ public class MainFrame extends JFrame {
     }
 
     private void loadWindowIcon() {
-        URL iconUrl = getClass().getResource("/LANDrop Icon (final).png");
+        URL iconUrl = getClass().getResource("/LANDrop-icon.png");
         if (iconUrl != null) {
             Image appIcon = new ImageIcon(iconUrl).getImage();
             setIconImage(appIcon);
         } else {
-            System.err.println("[MainFrame] Warning: App icon '/LANDrop Icon (final).png' not found in classpath.");
+            System.err.println("[MainFrame] Warning: App icon '/LANDrop-icon.png' not found in classpath.");
         }
     }
 
@@ -150,7 +150,6 @@ public class MainFrame extends JFrame {
         JButton settingsBtn = new JButton("Settings");
         settingsBtn.addActionListener(e -> new SettingsDialog(MainFrame.this).setVisible(true));
 
-        // Add action buttons to bottom sidebar panel
         JPanel bottomBtnPanel = new JPanel(new GridLayout(3, 1, 5, 5));
         bottomBtnPanel.add(connectBtn);
         bottomBtnPanel.add(historyBtn);
@@ -266,7 +265,6 @@ public class MainFrame extends JFrame {
         fileServer = new FileTransferServer(tcpPort, downloadDir);
 
         fileServer.setAcceptanceListener((peerIp, fileName, fileSize) -> {
-            // Auto-accept if peer is trusted and auto-accept option is enabled
             if (AppConfig.isAutoAcceptTrusted() && DatabaseManager.isPeerTrusted(peerIp)) {
                 TrayManager.showNotification(
                     "Receiving File", 
@@ -380,7 +378,7 @@ public class MainFrame extends JFrame {
 
                 @Override
                 public void onFileProgress(long bytesSent, long totalBytes) {
-                    int pct = (int) ((bytesSent * 100) / totalBytes);
+                    int pct = totalBytes > 0 ? (int) ((bytesSent * 100) / totalBytes) : 0;
                     String metricsText = metrics.getFormattedProgress(bytesSent, totalBytes);
                     
                     SwingUtilities.invokeLater(() -> {
@@ -412,7 +410,6 @@ public class MainFrame extends JFrame {
             PeerDevice currentSelection = peerList.getSelectedValue();
             peerListModel.clear();
             
-            // Filter self out
             List<PeerDevice> active = discoveryService.getActivePeers().values().stream()
                     .filter(p -> !p.getHostname().equalsIgnoreCase(localDeviceName))
                     .toList();
