@@ -92,7 +92,12 @@ public class MulticastDiscoveryService {
 
                 String display = nic.getDisplayName().toLowerCase();
                 String name = nic.getName().toLowerCase(); 
-                if (display.contains("virtual") || display.contains("vmware") || display.contains("wsl") || name.startsWith("docker")) {
+                
+                // Exclude common Windows virtual network adapters
+                if (display.contains("virtual") || display.contains("vmware") || 
+                    display.contains("wsl") || display.contains("hyper-v") || 
+                    display.contains("vethernet") || display.contains("zerotier") ||
+                    display.contains("tailscale") || name.startsWith("docker") || name.startsWith("veth")) {
                     continue; 
                 }
 
@@ -143,7 +148,6 @@ public class MulticastDiscoveryService {
                         hostname = parts[1];            
                     }
 
-                    // Ignore messages from the same instance
                     if (this.instanceId.equals(senderInstanceId)) {
                         continue; 
                     }
@@ -201,7 +205,6 @@ public class MulticastDiscoveryService {
     private void broadcastLoop(String deviceName) {
         while (running) {
             try {
-                // Halt outgoing beacons when stealth mode is enabled (programmatically or in config)
                 boolean currentStealth = stealthMode || AppConfig.isStealthMode();
                 if (!currentStealth && socket != null && !socket.isClosed()) {
                     String beacon = String.format("DISCOVER:%s:%s:%d", instanceId, deviceName, localTcpPort); 

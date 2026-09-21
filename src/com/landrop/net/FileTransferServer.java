@@ -40,6 +40,7 @@ public class FileTransferServer {
             while (running) {
                 try {
                     Socket socket = serverSocket.accept();
+                    socket.setSoTimeout(30000); // 30-second read timeout for file chunks
                     handleIncomingTransfer(socket);
                 } catch (IOException e) {
                     if (!running) break;
@@ -52,11 +53,9 @@ public class FileTransferServer {
         new Thread(() -> {
             String peerIp = socket.getInetAddress().getHostAddress();
             try (
-                // Wrap socket input stream with AES Decryption
                 InputStream decryptedIn = CryptoUtil.wrapDecryptedInput(socket.getInputStream());
                 DataInputStream in = new DataInputStream(decryptedIn);
                 
-                // Wrap socket output stream with AES Encryption
                 OutputStream encryptedOut = CryptoUtil.wrapEncryptedOutput(socket.getOutputStream());
                 DataOutputStream out = new DataOutputStream(encryptedOut)
             ) {
@@ -65,7 +64,7 @@ public class FileTransferServer {
                 long fileSize = in.readLong();
                 String sha256 = in.readUTF();
 
-                // 1. Check if peer is trusted; if not, ask for permission
+                // 1. Check if peer is trusted; if not, invoke listener prompt
                 boolean isTrusted = DatabaseManager.isPeerTrusted(peerIp);
                 boolean accepted = isTrusted;
 
@@ -73,7 +72,7 @@ public class FileTransferServer {
                     accepted = acceptanceListener.onRequestTransfer(peerIp, fileName, fileSize);
                 }
 
-                // 2. If rejected, signal -1L and abort
+                // 2. If rejected, signal -1L and abort immediately
                 if (!accepted) {
                     out.writeLong(-1L);
                     out.flush();
@@ -86,7 +85,7 @@ public class FileTransferServer {
                 long resumeOffset = DatabaseManager.getResumeOffset(transferId);
                 metadata.setBytesTransferred(resumeOffset);
 
-                // Send actual resume offset back to client
+                // Send actual resume offset back to client to start transmission
                 out.writeLong(resumeOffset);
                 out.flush();
 
@@ -117,7 +116,6 @@ public class FileTransferServer {
                     }
 
                     if (totalRead == fileSize) {
-                        // Verify Hash before confirming success
                         String calculatedHash = HashUtil.calculateSHA256(targetFile);
                         if (calculatedHash.equalsIgnoreCase(sha256)) {
                             DatabaseManager.saveCheckpoint(metadata, "COMPLETED");
@@ -136,6 +134,10 @@ public class FileTransferServer {
                 out.flush();
             } catch (Exception e) {
                 System.err.println("[FILE ERROR] Encrypted transfer failed from " + peerIp + ": " + e.getMessage());
+            } finally {
+                try {
+                    if (!socket.isClosed()) socket.close();
+                } catch (IOException ignored) {}
             }
         }).start();
     }
