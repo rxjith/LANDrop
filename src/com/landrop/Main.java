@@ -18,7 +18,14 @@ public class Main {
 
         System.out.print("Enter local TCP port to advertise [default: 52145]: ");
         String portInput = scanner.nextLine().trim();
-        int tcpPort = portInput.isEmpty() ? 52145 : Integer.parseInt(portInput);
+        int tcpPort = 52145;
+        if (!portInput.isEmpty()) {
+            try {
+                tcpPort = Integer.parseInt(portInput);
+            } catch (NumberFormatException e) {
+                System.out.println("[Warning] Invalid port entered. Falling back to default (52145).");
+            }
+        }
 
         MulticastDiscoveryService discoveryService = new MulticastDiscoveryService();
 
