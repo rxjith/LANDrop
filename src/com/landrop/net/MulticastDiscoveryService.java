@@ -12,22 +12,28 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 public class MulticastDiscoveryService {
+    // Multicast IP and Port agreed upon across the LAN
     public static final String MULTICAST_GROUP = "230.0.0.1"; 
     public static final int MULTICAST_PORT = 4446; 
-    private static final long PEER_TIMEOUT_MS = 10000; 
+    private static final long PEER_TIMEOUT_MS = 10000; // Drop peers silent for >10s
 
+    // Thread-safe map storing active peers indexed by IP address
     private final Map<String, PeerDevice> activePeers = new ConcurrentHashMap<>(); 
+    
     private MulticastSocket socket; 
     private InetAddress groupAddress; 
+    private SocketAddress groupSocketAddress;
+    
     private volatile boolean running = false; 
     private volatile boolean stealthMode = false; 
     private Consumer<String> chatMessageListener; 
 
+    // Unique ID for this instance so we ignore our own broadcasts
     private final String instanceId = UUID.randomUUID().toString().substring(0, 8);
     private final List<NetworkInterface> joinedInterfaces = new CopyOnWriteArrayList<>();
-    private SocketAddress groupSocketAddress;
     private int localTcpPort = 0;
 
+    // Background threads
     private Thread listenerThread;
     private Thread broadcasterThread;
     private Thread cleanerThread;
@@ -46,6 +52,7 @@ public class MulticastDiscoveryService {
             groupAddress = InetAddress.getByName(MULTICAST_GROUP); 
             groupSocketAddress = new InetSocketAddress(groupAddress, MULTICAST_PORT); 
             
+            // 1. Setup Multicast Socket with address re-use
             socket = new MulticastSocket((SocketAddress) null);
             socket.setReuseAddress(true);
             try {
@@ -58,8 +65,10 @@ public class MulticastDiscoveryService {
                 socket.setOption(StandardSocketOptions.IP_MULTICAST_LOOP, false); 
             } catch (Exception ignored) {}
 
+            // 2. Bind to real physical network interfaces (filter out VPNs/VMs)
             joinActiveInterfaces(); 
 
+            // 3. Start background worker threads
             listenerThread = new Thread(this::listenLoop, "Discovery-Listener"); 
             broadcasterThread = new Thread(() -> broadcastLoop(deviceName), "Presence-Broadcaster"); 
             cleanerThread = new Thread(this::cleanupLoop, "Discovery-Cleaner"); 
@@ -83,6 +92,7 @@ public class MulticastDiscoveryService {
         }
     }
 
+    // Filter out WSL, VirtualBox, Hyper-V, Docker, and VPN interfaces
     private void joinActiveInterfaces() {
         try {
             Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces(); 
@@ -93,7 +103,6 @@ public class MulticastDiscoveryService {
                 String display = nic.getDisplayName().toLowerCase();
                 String name = nic.getName().toLowerCase(); 
                 
-                // Exclude common Windows virtual network adapters
                 if (display.contains("virtual") || display.contains("vmware") || 
                     display.contains("wsl") || display.contains("hyper-v") || 
                     display.contains("vethernet") || display.contains("zerotier") ||
@@ -117,6 +126,7 @@ public class MulticastDiscoveryService {
         }
     }
 
+    // LISTENER THREAD: Listens continuously for UDP packets on 230.0.0.1:4446
     private void listenLoop() {
         byte[] buffer = new byte[2048]; 
         while (running) {
@@ -126,12 +136,14 @@ public class MulticastDiscoveryService {
 
                 InetAddress senderIp = packet.getAddress();
 
+                // Ignore packets sent from our own local machine
                 if (senderIp.isLoopbackAddress() || isLocalAddress(senderIp)) {
                     continue; 
                 }
 
                 String payload = new String(packet.getData(), packet.getOffset(), packet.getLength(), StandardCharsets.UTF_8).trim(); 
 
+                // CASE A: Someone is announcing presence ("DISCOVER:<instance_id>:<hostname>:<tcp_port>")
                 if (payload.startsWith("DISCOVER:")) {
                     String[] parts = payload.split(":"); 
                     String senderInstanceId = "";
@@ -148,6 +160,7 @@ public class MulticastDiscoveryService {
                         hostname = parts[1];            
                     }
 
+                    // Ignore if the discovery packet came from our own instance
                     if (this.instanceId.equals(senderInstanceId)) {
                         continue; 
                     }
@@ -156,6 +169,7 @@ public class MulticastDiscoveryService {
                     final String resolvedHostname = hostname;
                     final int tcpPort = parsedPort;
 
+                    // Insert or update peer in thread-safe map
                     activePeers.compute(ipKey, (k, existingPeer) -> {
                         if (existingPeer == null) {
                             return new PeerDevice(senderIp, resolvedHostname, tcpPort);
@@ -165,6 +179,8 @@ public class MulticastDiscoveryService {
                             return existingPeer;
                         }
                     });
+
+                // CASE B: Someone sent a subnet chat message ("CHAT:<instance_id>:<sender>:<message>")
                 } else if (payload.startsWith("CHAT:")) {
                     String[] chatParts = payload.split(":", 4);
                     if (chatParts.length >= 4) {
@@ -179,11 +195,9 @@ public class MulticastDiscoveryService {
                         chatMessageListener.accept(payload.substring(5)); 
                     }
 
+                // CASE C: Someone is shutting down ("BYE:<instance_id>")
                 } else if (payload.startsWith("BYE:")) {
-                    String[] byeParts = payload.split(":");
-                    if (byeParts.length >= 2) {
-                        activePeers.remove(byeParts[1]);
-                    }
+                    // Remove peer from map using their IP address key
                     activePeers.remove(senderIp.getHostAddress());
                 }
             } catch (SocketException e) {
@@ -202,6 +216,7 @@ public class MulticastDiscoveryService {
         }
     }
 
+    // BROADCASTER THREAD: Sends a "DISCOVER" multicast packet every 3 seconds
     private void broadcastLoop(String deviceName) {
         while (running) {
             try {
@@ -220,6 +235,7 @@ public class MulticastDiscoveryService {
         }
     }
 
+    // CLEANER THREAD: Purges peers that haven't sent a beacon in >10 seconds
     private void cleanupLoop() {
         while (running) {
             try {
@@ -234,6 +250,7 @@ public class MulticastDiscoveryService {
         }
     }
 
+    // Sends a direct multicast text message to everyone on the subnet
     public void sendSubnetChat(String deviceName, String message) {
         if (stealthMode || AppConfig.isStealthMode() || !running || socket == null || socket.isClosed()) return;
         try {
@@ -245,6 +262,7 @@ public class MulticastDiscoveryService {
         }
     }
 
+    // Helper method to write UDP datagrams out to all joined physical interfaces
     private void sendMulticastPacket(byte[] data) {
         if (joinedInterfaces.isEmpty()) {
             try {
@@ -286,6 +304,7 @@ public class MulticastDiscoveryService {
         if (broadcasterThread != null) broadcasterThread.interrupt();
         if (cleanerThread != null) cleanerThread.interrupt();
 
+        // Broadcast disconnect packet before closing
         try {
             if (socket != null && !socket.isClosed() && !isStealthMode()) {
                 String byePayload = "BYE:" + instanceId;
