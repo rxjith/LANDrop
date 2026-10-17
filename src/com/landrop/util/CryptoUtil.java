@@ -11,7 +11,7 @@ import java.security.MessageDigest;
 
 public class CryptoUtil {
 
-    private static final String ALGORITHM = "AES";
+    private static final String ALGORITHM = "AES/CTR/NoPadding";
     // For a zero-config local mesh project, deriving a 128-bit AES key from a static passphrase is standard.
     // In a production app, you would use a Diffie-Hellman key exchange per session.
     private static final String MESH_PASSPHRASE = "LANDrop-Local-Mesh-Secret-2026"; 
