@@ -320,6 +320,11 @@ public class MainFrame extends JFrame {
         discoveryService = new MulticastDiscoveryService();
         discoveryService.start(deviceName, tcpPort);
 
+        if (radarPanel != null) {
+            radarPanel.setGhostMode(discoveryService.isStealthMode(), false);
+            radarPanel.setGhostToggleListener(discoveryService::setStealthMode);
+        }
+
         chatManager = new ChatManager(incomingMsg -> {
             SwingUtilities.invokeLater(() -> {
                 if (chatLogArea != null) {

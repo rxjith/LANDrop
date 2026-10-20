@@ -281,6 +281,12 @@ public class MulticastDiscoveryService {
     }
 
     public void setStealthMode(boolean enabled) { 
+        // Going ghost: send a BYE first so peers drop us immediately instead of waiting for a timeout
+        if (enabled && !isStealthMode() && running && socket != null && !socket.isClosed()) {
+            try {
+                sendMulticastPacket(("BYE:" + instanceId).getBytes(StandardCharsets.UTF_8));
+            } catch (Exception ignored) {}
+        }
         this.stealthMode = enabled;
         AppConfig.setStealthMode(enabled);
     }

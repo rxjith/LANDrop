@@ -10,14 +10,13 @@ public class SettingsDialog extends JDialog {
 
     private final JTextField dirField;
     private final JCheckBox autoAcceptCheckBox;
-    private final JCheckBox stealthModeCheckBox;
     private final JCheckBox clipboardSyncCheckBox;
     private final JTextField portField;
     private final JTextField speedLimitField;
 
     public SettingsDialog(Frame parent) {
         super(parent, "LANDrop Settings", true);
-        setSize(560, 360);
+        setSize(560, 320);
         setLocationRelativeTo(parent);
         setLayout(new BorderLayout(10, 10));
 
@@ -51,26 +50,21 @@ public class SettingsDialog extends JDialog {
         autoAcceptCheckBox = new JCheckBox("Auto-accept incoming transfers from trusted peers", AppConfig.isAutoAcceptTrusted());
         formPanel.add(autoAcceptCheckBox, gbc);
 
-        // Row 2: Stealth Mode Toggle
-        stealthModeCheckBox = new JCheckBox("Stealth Mode (Halt outgoing multicast discovery beacons)", AppConfig.isStealthMode());
-        gbc.gridy = 2;
-        formPanel.add(stealthModeCheckBox, gbc);
-
-        // Row 3: Cross-Device Clipboard Sync
+        // Row 2: Cross-Device Clipboard Sync
         clipboardSyncCheckBox = new JCheckBox("Cross-Device Clipboard Sync (Auto-share copied text across subnet)", AppConfig.isClipboardSyncEnabled());
-        gbc.gridy = 3;
+        gbc.gridy = 2;
         formPanel.add(clipboardSyncCheckBox, gbc);
 
-        // Row 4: TCP Port
-        gbc.gridy = 4; gbc.gridwidth = 1;
+        // Row 3: TCP Port
+        gbc.gridy = 3; gbc.gridwidth = 1;
         formPanel.add(new JLabel("File Transfer Port (TCP):"), gbc);
 
         portField = new JTextField(String.valueOf(AppConfig.getTcpPort()), 8);
         gbc.gridx = 1;
         formPanel.add(portField, gbc);
 
-        // Row 5: Bandwidth Throttling Speed Limit
-        gbc.gridx = 0; gbc.gridy = 5;
+        // Row 4: Bandwidth Throttling Speed Limit
+        gbc.gridx = 0; gbc.gridy = 4;
         formPanel.add(new JLabel("Max Bandwidth (KB/s, 0=Unlimited):"), gbc);
 
         speedLimitField = new JTextField(String.valueOf(AppConfig.getBandwidthLimitKbps()), 8);
@@ -102,7 +96,6 @@ public class SettingsDialog extends JDialog {
 
                 AppConfig.setDownloadDir(dir.getAbsolutePath());
                 AppConfig.setAutoAcceptTrusted(autoAcceptCheckBox.isSelected());
-                AppConfig.setStealthMode(stealthModeCheckBox.isSelected());
                 AppConfig.setClipboardSyncEnabled(clipboardSyncCheckBox.isSelected());
                 AppConfig.setTcpPort(port);
                 AppConfig.setBandwidthLimitKbps(Math.max(0, speedLimit));
