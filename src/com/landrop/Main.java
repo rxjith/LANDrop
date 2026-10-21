@@ -11,7 +11,6 @@ public class Main {
         System.out.println("         LANDrop Multicast Testbed               ");
         System.out.println("=================================================");
 
-        // Change to "Abhijit-Laptop" on the laptop, and "Abhijit-PC" on the PC
         System.out.print("Enter device name for this node [default: LANDrop-PC]: ");
         String nameInput = scanner.nextLine().trim();
         final String LOCAL_DEVICE_NAME = nameInput.isEmpty() ? "LANDrop-PC" : nameInput;
