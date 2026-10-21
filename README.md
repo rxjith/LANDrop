@@ -90,4 +90,4 @@ java -cp target/LANDrop-1.0.0-jar-with-dependencies.jar com.landrop.ui.MainFrame
 
 ## 📄 License
 
-This project is open-source and released under the **MIT License**.
+This project is open-source and released under the **GPL-3.0 License**.
