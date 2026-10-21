@@ -133,6 +133,18 @@ public class MainFrame extends JFrame {
 
         JButton connectBtn = new JButton("Open Direct Transfer Room");
         connectBtn.addActionListener(e -> {
+            // Guard: Check if Ghost Mode is active
+            if (radarPanel != null && radarPanel.isGhostMode()) {
+                JOptionPane.showMessageDialog(
+                    this,
+                    "Cannot establish connection while Ghost Mode is active.\n" +
+                    "Please turn off Ghost Mode to open a direct transfer room.",
+                    "Ghost Mode Active",
+                    JOptionPane.WARNING_MESSAGE
+                );
+                return;
+            }
+
             PeerDevice selected = peerList.getSelectedValue();
             if (selected == null) {
                 JOptionPane.showMessageDialog(this, "Select a discovered peer from the list first.", "No Target", JOptionPane.WARNING_MESSAGE);
@@ -319,6 +331,11 @@ public class MainFrame extends JFrame {
 
         discoveryService = new MulticastDiscoveryService();
         discoveryService.start(deviceName, tcpPort);
+
+        if (radarPanel != null) {
+            radarPanel.setGhostMode(discoveryService.isStealthMode(), false);
+            radarPanel.setGhostToggleListener(discoveryService::setStealthMode);
+        }
 
         chatManager = new ChatManager(incomingMsg -> {
             SwingUtilities.invokeLater(() -> {
