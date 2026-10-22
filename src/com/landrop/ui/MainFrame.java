@@ -342,11 +342,11 @@ public class MainFrame extends JFrame {
             radarPanel.setGhostToggleListener(discoveryService::setStealthMode);
         }
 
-        // Initialize Clipboard Manager and broadcast local copies to active peer
+        // Initialize Clipboard Manager and broadcast local copies if enabled
         clipboardManager = new ClipboardManager();
-        clipboardManager.startMonitoring(localText -> {
+        clipboardManager.startMonitoring(payload -> {
+            if (!AppConfig.isClipboardSyncEnabled()) return; // Block sending if disabled
             if (targetPeer != null && targetPeer.getIpAddress() != null) {
-                String payload = "[CLIPBOARD]: " + localText;
                 ChatManager.sendMessageAsync(
                     targetPeer.getIpAddress().getHostAddress(),
                     localDeviceName,
@@ -358,16 +358,26 @@ public class MainFrame extends JFrame {
         // Initialize Chat & Connection Request Manager
         chatManager = new ChatManager((senderIp, incomingPayload) -> {
             SwingUtilities.invokeLater(() -> {
-                // 1. Handle incoming Clipboard Sync payload
-                if (incomingPayload.contains("[CLIPBOARD]: ")) {
-                    int clipIdx = incomingPayload.indexOf("[CLIPBOARD]: ");
-                    String sharedText = incomingPayload.substring(clipIdx + 13);
+                // 1. Handle incoming Clipboard / Image Sync payload
+                if (incomingPayload.startsWith("[CLIPBOARD]: ") || incomingPayload.startsWith("[IMAGE_CLIPBOARD]: ")) {
+                    // Completely ignore and suppress if disabled in settings
+                    if (!AppConfig.isClipboardSyncEnabled()) {
+                        return;
+                    }
+
                     if (clipboardManager != null) {
-                        clipboardManager.applyRemoteTextToClipboard(sharedText);
+                        clipboardManager.applyRemotePayload(incomingPayload);
                     }
                     if (statusLabel != null) {
-                        statusLabel.setText("Status: Synced clipboard text from remote peer.");
+                        statusLabel.setText("Status: Synced clipboard content from remote peer.");
                     }
+
+                    // Show notification with corrected title ("Content Copied")
+                    TrayManager.showNotification(
+                        "Content Copied", 
+                        "Synced new clipboard content from remote peer.", 
+                        TrayIcon.MessageType.INFO
+                    );
                     return;
                 }
 
@@ -428,7 +438,10 @@ public class MainFrame extends JFrame {
                 }
             });
 
-            TrayManager.showNotification("New Connection Request", incomingPayload, TrayIcon.MessageType.INFO);
+            // Trigger tray notification only for actual chat/connection requests, not clipboard packets
+            if (!incomingPayload.startsWith("[CLIPBOARD]: ") && !incomingPayload.startsWith("[IMAGE_CLIPBOARD]: ")) {
+                TrayManager.showNotification("New Connection Request", incomingPayload, TrayIcon.MessageType.INFO);
+            }
         });
         chatManager.startServer();
 
