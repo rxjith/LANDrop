@@ -52,6 +52,7 @@ public class DatabaseManager {
                 "sha256_hash TEXT NOT NULL, " +
                 "peer_ip TEXT NOT NULL, " +
                 "status TEXT NOT NULL, " +
+                "direction TEXT DEFAULT 'RECEIVED', " +
                 "last_updated INTEGER NOT NULL);";
         
         String createPeersTable = "CREATE TABLE IF NOT EXISTS trusted_peers (" +
@@ -72,6 +73,14 @@ public class DatabaseManager {
             try (Statement stmt = conn.createStatement()) {
                 stmt.execute(createTransfersTable);
                 stmt.execute(createPeersTable);
+
+                // Safe migration for existing databases missing the 'direction' column
+                try {
+                    stmt.execute("ALTER TABLE pending_transfers ADD COLUMN direction TEXT DEFAULT 'RECEIVED';");
+                } catch (SQLException ignored) {
+                    // Column already exists
+                }
+
                 conn.commit();
                 LOGGER.info("SQLite database initialized successfully with WAL mode.");
             } catch (SQLException e) {
@@ -91,10 +100,11 @@ public class DatabaseManager {
         public String sha256Hash;
         public String peerIp;
         public String status;
+        public String direction;
         public long lastUpdated;
 
         public TransferRecord(String transferId, String fileName, long totalBytes, long bytesTransferred,
-                            String sha256Hash, String peerIp, String status, long lastUpdated) {
+                            String sha256Hash, String peerIp, String status, String direction, long lastUpdated) {
             this.transferId = transferId;
             this.fileName = fileName;
             this.totalBytes = totalBytes;
@@ -102,19 +112,24 @@ public class DatabaseManager {
             this.sha256Hash = sha256Hash;
             this.peerIp = peerIp;
             this.status = status;
+            this.direction = direction;
             this.lastUpdated = lastUpdated;
         }
     }
     
     public static void saveCheckpoint(TransferMetadata metadata, String status) {
+        saveCheckpoint(metadata, status, "RECEIVED");
+    }
+
+    public static void saveCheckpoint(TransferMetadata metadata, String status, String direction) {
         if (metadata == null || metadata.getTransferId() == null) {
             LOGGER.warning("Attempted to save checkpoint with invalid or null TransferMetadata.");
             return;
         }
 
         String sql = "INSERT INTO pending_transfers " +
-                     "(transfer_id, file_name, total_bytes, bytes_transferred, sha256_hash, peer_ip, status, last_updated) " +
-                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
+                     "(transfer_id, file_name, total_bytes, bytes_transferred, sha256_hash, peer_ip, status, direction, last_updated) " +
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) " +
                      "ON CONFLICT(transfer_id) DO UPDATE SET " +
                      "file_name = excluded.file_name, " +
                      "total_bytes = excluded.total_bytes, " +
@@ -122,6 +137,7 @@ public class DatabaseManager {
                      "sha256_hash = excluded.sha256_hash, " +
                      "peer_ip = excluded.peer_ip, " +
                      "status = excluded.status, " +
+                     "direction = COALESCE(excluded.direction, pending_transfers.direction), " +
                      "last_updated = excluded.last_updated;";
         
         try (Connection conn = getConnection();
@@ -133,7 +149,8 @@ public class DatabaseManager {
             pstmt.setString(5, metadata.getSha256Hash());
             pstmt.setString(6, metadata.getPeerIp());
             pstmt.setString(7, status != null ? status : "UNKNOWN");
-            pstmt.setLong(8, System.currentTimeMillis());
+            pstmt.setString(8, direction != null ? direction : "RECEIVED");
+            pstmt.setLong(9, System.currentTimeMillis());
             pstmt.executeUpdate();
         } catch (SQLException e) {
             LOGGER.log(Level.SEVERE, "Error saving transfer checkpoint for ID: " + metadata.getTransferId(), e);
@@ -228,7 +245,7 @@ public class DatabaseManager {
 
     public static java.util.List<TransferRecord> getTransferHistory() {
         java.util.List<TransferRecord> list = new java.util.ArrayList<>();
-        String sql = "SELECT transfer_id, file_name, total_bytes, bytes_transferred, sha256_hash, peer_ip, status, last_updated " +
+        String sql = "SELECT transfer_id, file_name, total_bytes, bytes_transferred, sha256_hash, peer_ip, status, direction, last_updated " +
                     "FROM pending_transfers ORDER BY last_updated DESC";
 
         try (Connection conn = getConnection();
@@ -244,6 +261,7 @@ public class DatabaseManager {
                     rs.getString("sha256_hash"),
                     rs.getString("peer_ip"),
                     rs.getString("status"),
+                    rs.getString("direction") != null ? rs.getString("direction") : "RECEIVED",
                     rs.getLong("last_updated")
                 ));
             }

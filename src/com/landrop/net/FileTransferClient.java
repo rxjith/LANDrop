@@ -57,7 +57,7 @@ public class FileTransferClient {
                 // Read resume offset or acceptance status from receiver (-1L = Declined)
                 long offset = in.readLong();
                 if (offset == -1L) {
-                    DatabaseManager.saveCheckpoint(metadata, "DECLINED");
+                    DatabaseManager.saveCheckpoint(metadata, "DECLINED", "SENT");
                     throw new IOException("Transfer request was declined by the remote peer.");
                 }
 
@@ -66,7 +66,7 @@ public class FileTransferClient {
                     metadata.setBytesTransferred(skipped);
                 }
 
-                DatabaseManager.saveCheckpoint(metadata, "IN_PROGRESS");
+                DatabaseManager.saveCheckpoint(metadata, "IN_PROGRESS", "SENT");
 
                 byte[] buffer = new byte[65536]; // 64 KB stream chunk
                 long totalRead = metadata.getBytesTransferred();
@@ -100,7 +100,7 @@ public class FileTransferClient {
 
                     // SQLite Checkpoint sync (every 1 second)
                     if (System.currentTimeMillis() - lastCheckpoint > 1000) {
-                        DatabaseManager.saveCheckpoint(metadata, "IN_PROGRESS");
+                        DatabaseManager.saveCheckpoint(metadata, "IN_PROGRESS", "SENT");
                         lastCheckpoint = System.currentTimeMillis();
                     }
                 }
@@ -108,11 +108,11 @@ public class FileTransferClient {
 
                 String response = in.readUTF();
                 boolean success = "SUCCESS".equalsIgnoreCase(response);
-                DatabaseManager.saveCheckpoint(metadata, success ? "COMPLETED" : "FAILED");
+                DatabaseManager.saveCheckpoint(metadata, success ? "COMPLETED" : "FAILED", "SENT");
                 return success;
             }
         } catch (Exception e) {
-            DatabaseManager.saveCheckpoint(metadata, "INTERRUPTED");
+            DatabaseManager.saveCheckpoint(metadata, "INTERRUPTED", "SENT");
             throw e;
         } finally {
             if (!socket.isClosed()) {
