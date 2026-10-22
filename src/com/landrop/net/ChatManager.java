@@ -1,75 +1,77 @@
 package com.landrop.net;
 
-import java.io.BufferedReader; // For reading input from the socket
-import java.io.InputStreamReader; // For reading input from the socket
-import java.io.PrintWriter; // For sending output to the socket
-import java.net.Socket; // For socket communication
-import java.net.ServerSocket; // For creating a server socket
-import java.util.function.Consumer; // For handling incoming messages with a callback
-import java.util.logging.Level; // For logging purposes
-import java.util.logging.Logger; // For logging purposes
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.PrintWriter;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.function.BiConsumer;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class ChatManager {
-    private static final Logger LOGGER = Logger.getLogger(ChatManager.class.getName()); // Logger for logging messages
-    private static final int CHAT_PORT = 52146; // Port number for chat communication
+    private static final Logger LOGGER = Logger.getLogger(ChatManager.class.getName());
+    private static final int CHAT_PORT = 52146;
 
-    private ServerSocket serverSocket; // Server socket for listening to incoming connections
-    private volatile boolean running = false; // Flag to indicate if the chat manager is running
-    private final Consumer<String> onMessageReceived; // Callback for handling incoming messages
+    private ServerSocket serverSocket;
+    private volatile boolean running = false;
+    
+    // BiConsumer passes both the sender's IP address and the message text payload
+    private final BiConsumer<String, String> onMessageReceived;
 
-    public ChatManager(Consumer<String> onMessageReceived){
-        this.onMessageReceived = onMessageReceived; // Initialize the callback for incoming messages
+    public ChatManager(BiConsumer<String, String> onMessageReceived) {
+        this.onMessageReceived = onMessageReceived;
     }
 
     public void startServer() {
-        running = true; // Set the running flag to true
+        running = true;
         new Thread(() -> {
             try {
-                serverSocket = new ServerSocket(CHAT_PORT); // Create a server socket on the specified port
+                serverSocket = new ServerSocket(CHAT_PORT);
                 while (running) {
-                    Socket client = serverSocket.accept(); // Accept incoming client connections
-                    new Thread(() -> handleIncoming(client)).start(); // Handle each client connection in a new thread
+                    Socket client = serverSocket.accept();
+                    new Thread(() -> handleIncoming(client)).start();
                 }
             } catch (Exception e) {
                 if (running) {
-                    LOGGER.log(Level.SEVERE, "Chat server encountered an error: ", e); // Log any errors encountered while running the server
+                    LOGGER.log(Level.SEVERE, "Chat server encountered an error: ", e);
                 }
             }
-        }, "ChatServerThread").start(); // Start the server thread
+        }, "ChatServerThread").start();
     }
 
     private void handleIncoming(Socket socket) {
+        String senderIp = socket.getInetAddress().getHostAddress();
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream()))) {
             String line;
             while ((line = reader.readLine()) != null) {
                 if (onMessageReceived != null) {
-                    onMessageReceived.accept(line); // Invoke the callback with the received message
+                    onMessageReceived.accept(senderIp, line);
                 }
             }
         } catch (Exception ignored) {
-        }                
-    } 
+        }
+    }
 
     public static void sendMessageAsync(String targetIp, String senderHost, String message) {
         new Thread(() -> {
             try (Socket socket = new Socket(targetIp, CHAT_PORT);
                  PrintWriter writer = new PrintWriter(socket.getOutputStream(), true)) {
-                writer.println("[" + senderHost + "] " + message); // Send the message to the target IP
+                // Formatting payload: [senderHost] message
+                writer.println("[" + senderHost + "] " + message);
             } catch (Exception e) {
-                LOGGER.log(Level.SEVERE, "Failed to send message to " + targetIp + ": ", e); // Log any errors encountered while sending the message
+                LOGGER.log(Level.SEVERE, "Failed to send message to " + targetIp + ": ", e);
             }
         }, "ChatClient-Worker").start();
     }
 
     public void stop() {
-        running = false; // Set the running flag to false
+        running = false;
         try {
             if (serverSocket != null && !serverSocket.isClosed()) {
-                serverSocket.close(); // Close the server socket if it's open
+                serverSocket.close();
             }
         } catch (Exception ignored) {
-            // Ignore any exceptions that occur while closing the server socket
         }
     }
-
 }
