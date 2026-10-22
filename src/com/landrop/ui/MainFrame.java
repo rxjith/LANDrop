@@ -4,6 +4,7 @@ import com.formdev.flatlaf.FlatDarkLaf;
 import com.landrop.db.DatabaseManager;
 import com.landrop.model.PeerDevice;
 import com.landrop.net.ChatManager;
+import com.landrop.net.ClipboardManager;
 import com.landrop.net.FileTransferClient;
 import com.landrop.net.FileTransferServer;
 import com.landrop.net.MulticastDiscoveryService;
@@ -29,6 +30,7 @@ public class MainFrame extends JFrame {
     private FileTransferServer fileServer;
     private String localDeviceName;
     private ChatManager chatManager;
+    private ClipboardManager clipboardManager;
 
     // Discovery UI Components
     private final DefaultListModel<PeerDevice> peerListModel = new DefaultListModel<>();
@@ -181,7 +183,10 @@ public class MainFrame extends JFrame {
         // Top Header
         JPanel topBar = new JPanel(new BorderLayout(5, 5));
         JButton backBtn = new JButton("← Back to Radar");
-        backBtn.addActionListener(e -> cardLayout.show(rootPanel, "DISCOVERY"));
+        backBtn.addActionListener(e -> {
+            targetPeer = null; // Clear active peer session when returning to radar
+            cardLayout.show(rootPanel, "DISCOVERY");
+        });
 
         JPanel rightTopPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
         JButton roomHistoryBtn = new JButton("Transfer History");
@@ -261,7 +266,7 @@ public class MainFrame extends JFrame {
 
     private void enterTransferRoom(PeerDevice peer) {
         this.targetPeer = peer;
-        transferHeaderLabel.setText("   Connected: " + peer.getHostname() + " (" + peer.getIpAddress() + ")");
+        transferHeaderLabel.setText("   Connected: " + peer.getHostname() + " (" + peer.getIpAddress().getHostAddress() + ")");
         chatLogArea.setText("--- Session established with " + peer.getHostname() + " ---\n");
         statusLabel.setText("Status: Ready to send files.");
         progressBar.setValue(0);
@@ -337,53 +342,83 @@ public class MainFrame extends JFrame {
             radarPanel.setGhostToggleListener(discoveryService::setStealthMode);
         }
 
-        chatManager = new ChatManager(incomingMsg -> {
+        // Initialize Clipboard Manager and broadcast local copies to active peer
+        clipboardManager = new ClipboardManager();
+        clipboardManager.startMonitoring(localText -> {
+            if (targetPeer != null && targetPeer.getIpAddress() != null) {
+                String payload = "[CLIPBOARD]: " + localText;
+                ChatManager.sendMessageAsync(
+                    targetPeer.getIpAddress().getHostAddress(),
+                    localDeviceName,
+                    payload
+                );
+            }
+        });
+
+        // Initialize Chat & Connection Request Manager
+        chatManager = new ChatManager((senderIp, incomingPayload) -> {
             SwingUtilities.invokeLater(() -> {
-                // If we are ALREADY in a session with the peer, just append the message to the chat
+                // 1. Handle incoming Clipboard Sync payload
+                if (incomingPayload.contains("[CLIPBOARD]: ")) {
+                    int clipIdx = incomingPayload.indexOf("[CLIPBOARD]: ");
+                    String sharedText = incomingPayload.substring(clipIdx + 13);
+                    if (clipboardManager != null) {
+                        clipboardManager.applyRemoteTextToClipboard(sharedText);
+                    }
+                    if (statusLabel != null) {
+                        statusLabel.setText("Status: Synced clipboard text from remote peer.");
+                    }
+                    return;
+                }
+
+                // 2. If already in a transfer session, append directly to chat log
                 if (targetPeer != null) {
                     if (chatLogArea != null) {
-                        chatLogArea.append(incomingMsg + "\n");
+                        chatLogArea.append(incomingPayload + "\n");
                     }
                 } else {
-                    // Device B is NOT in the transfer room: Prompt with a connection popup!
+                    // 3. Device B is outside the room: Prompt with Connection Request Dialog
                     int choice = JOptionPane.showConfirmDialog(
                         MainFrame.this,
-                        incomingMsg + "\n\nDo you want to establish a direct connection and open the Transfer Room?",
+                        incomingPayload + "\n\nDo you want to establish a connection and open the Transfer Room?",
                         "Incoming Connection Request",
                         JOptionPane.YES_NO_OPTION,
                         JOptionPane.QUESTION_MESSAGE
                     );
 
                     if (choice == JOptionPane.YES_OPTION) {
-                        // Find the peer from our active discovered peers list
                         PeerDevice matchedPeer = null;
+
+                        // Try matching peer by IP or Hostname from active multicast discovery map
                         if (discoveryService != null) {
-                            for (PeerDevice peer : discoveryService.getActivePeers().values()) {
-                                if (incomingMsg.contains(peer.getHostname())) {
-                                    matchedPeer = peer;
-                                    break;
+                            matchedPeer = discoveryService.getActivePeers().get(senderIp);
+                            if (matchedPeer == null) {
+                                for (PeerDevice peer : discoveryService.getActivePeers().values()) {
+                                    if (incomingPayload.contains(peer.getHostname())) {
+                                        matchedPeer = peer;
+                                        break;
+                                    }
                                 }
                             }
                         }
 
                         if (matchedPeer != null) {
-                            // Open transfer room for B automatically and load the message
                             enterTransferRoom(matchedPeer);
                             if (chatLogArea != null) {
-                                chatLogArea.append(incomingMsg + "\n");
+                                chatLogArea.append(incomingPayload + "\n");
                             }
                         } else {
-                            // Fallback: If no hostname match was found in discovery list, take the first available active peer or notify
+                            // Fallback if IP/Hostname key is not found in discovery map
                             if (discoveryService != null && !discoveryService.getActivePeers().isEmpty()) {
                                 matchedPeer = discoveryService.getActivePeers().values().iterator().next();
                                 enterTransferRoom(matchedPeer);
                                 if (chatLogArea != null) {
-                                    chatLogArea.append(incomingMsg + "\n");
+                                    chatLogArea.append(incomingPayload + "\n");
                                 }
                             } else {
                                 JOptionPane.showMessageDialog(
                                     MainFrame.this,
-                                    "Could not resolve peer session details from local network.",
+                                    "Could not resolve peer details from active discovery list.",
                                     "Connection Error",
                                     JOptionPane.WARNING_MESSAGE
                                 );
@@ -393,7 +428,7 @@ public class MainFrame extends JFrame {
                 }
             });
 
-            TrayManager.showNotification("New Connection Request", incomingMsg, TrayIcon.MessageType.INFO);
+            TrayManager.showNotification("New Connection Request", incomingPayload, TrayIcon.MessageType.INFO);
         });
         chatManager.startServer();
 
@@ -495,6 +530,7 @@ public class MainFrame extends JFrame {
 
     @Override
     public void dispose() {
+        if (clipboardManager != null) clipboardManager.stop();
         if (chatManager != null) chatManager.stop();
         if (fileServer != null) fileServer.stop();
         if (discoveryService != null) discoveryService.stop();
