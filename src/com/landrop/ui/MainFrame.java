@@ -339,11 +339,61 @@ public class MainFrame extends JFrame {
 
         chatManager = new ChatManager(incomingMsg -> {
             SwingUtilities.invokeLater(() -> {
-                if (chatLogArea != null) {
-                    chatLogArea.append(incomingMsg + "\n");
+                // If we are ALREADY in a session with the peer, just append the message to the chat
+                if (targetPeer != null) {
+                    if (chatLogArea != null) {
+                        chatLogArea.append(incomingMsg + "\n");
+                    }
+                } else {
+                    // Device B is NOT in the transfer room: Prompt with a connection popup!
+                    int choice = JOptionPane.showConfirmDialog(
+                        MainFrame.this,
+                        incomingMsg + "\n\nDo you want to establish a direct connection and open the Transfer Room?",
+                        "Incoming Connection Request",
+                        JOptionPane.YES_NO_OPTION,
+                        JOptionPane.QUESTION_MESSAGE
+                    );
+
+                    if (choice == JOptionPane.YES_OPTION) {
+                        // Find the peer from our active discovered peers list
+                        PeerDevice matchedPeer = null;
+                        if (discoveryService != null) {
+                            for (PeerDevice peer : discoveryService.getActivePeers().values()) {
+                                if (incomingMsg.contains(peer.getHostname())) {
+                                    matchedPeer = peer;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (matchedPeer != null) {
+                            // Open transfer room for B automatically and load the message
+                            enterTransferRoom(matchedPeer);
+                            if (chatLogArea != null) {
+                                chatLogArea.append(incomingMsg + "\n");
+                            }
+                        } else {
+                            // Fallback: If no hostname match was found in discovery list, take the first available active peer or notify
+                            if (discoveryService != null && !discoveryService.getActivePeers().isEmpty()) {
+                                matchedPeer = discoveryService.getActivePeers().values().iterator().next();
+                                enterTransferRoom(matchedPeer);
+                                if (chatLogArea != null) {
+                                    chatLogArea.append(incomingMsg + "\n");
+                                }
+                            } else {
+                                JOptionPane.showMessageDialog(
+                                    MainFrame.this,
+                                    "Could not resolve peer session details from local network.",
+                                    "Connection Error",
+                                    JOptionPane.WARNING_MESSAGE
+                                );
+                            }
+                        }
+                    }
                 }
             });
-            TrayManager.showNotification("New Message", incomingMsg, TrayIcon.MessageType.INFO);
+
+            TrayManager.showNotification("New Connection Request", incomingMsg, TrayIcon.MessageType.INFO);
         });
         chatManager.startServer();
 
