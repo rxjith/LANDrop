@@ -7,6 +7,8 @@ import com.landrop.net.FileTransferClient;
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.io.File;
 import java.net.InetAddress;
 import java.text.SimpleDateFormat;
@@ -19,16 +21,18 @@ public class TransferHistoryDialog extends JDialog {
     private final JTable historyTable;
     private List<TransferRecord> records;
     private final int targetPort;
+    private Timer autoRefreshTimer;
 
     public TransferHistoryDialog(Frame parent, int targetPort) {
         super(parent, "Transfer History & Resumes", true);
         this.targetPort = targetPort;
 
-        setSize(800, 400);
+        setSize(850, 400);
         setLocationRelativeTo(parent);
         setLayout(new BorderLayout(10, 10));
 
-        String[] columns = {"File Name", "Peer IP", "Progress", "Status", "Last Updated"};
+        // Added "Direction" column
+        String[] columns = {"File Name", "Peer IP", "Direction", "Progress", "Status", "Last Updated"};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -55,6 +59,18 @@ public class TransferHistoryDialog extends JDialog {
         add(bottomPanel, BorderLayout.SOUTH);
 
         loadHistory();
+
+        // Start background auto-refresh timer (every 1.5 seconds) to update progress in real-time
+        autoRefreshTimer = new Timer(1.5 > 0 ? 1500 : 1500, e -> loadHistoryPreservingSelection());
+        autoRefreshTimer.start();
+
+        // Ensure timer stops when dialog closes
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosed(WindowEvent e) {
+                stopTimer();
+            }
+        });
     }
 
     private void loadHistory() {
@@ -63,18 +79,41 @@ public class TransferHistoryDialog extends JDialog {
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
         for (TransferRecord r : records) {
+            // Display transfer direction (Sent / Received)
+            String direction = r.direction != null ? r.direction : "UNKNOWN";
+
             String progress = String.format("%.1f / %.1f MB",
                 r.bytesTransferred / (1024.0 * 1024.0),
                 r.totalBytes / (1024.0 * 1024.0));
             String date = sdf.format(new Date(r.lastUpdated));
 
-            tableModel.addRow(new Object[]{r.fileName, r.peerIp, progress, r.status, date});
+            tableModel.addRow(new Object[]{r.fileName, r.peerIp, direction, progress, r.status, date});
         }
+    }
+
+    private void loadHistoryPreservingSelection() {
+        int selectedRow = historyTable.getSelectedRow();
+        loadHistory();
+        if (selectedRow >= 0 && selectedRow < historyTable.getRowCount()) {
+            historyTable.setRowSelectionInterval(selectedRow, selectedRow);
+        }
+    }
+
+    private void stopTimer() {
+        if (autoRefreshTimer != null && autoRefreshTimer.isRunning()) {
+            autoRefreshTimer.stop();
+        }
+    }
+
+    @Override
+    public void dispose() {
+        stopTimer();
+        super.dispose();
     }
 
     private void attemptResume() {
         int selectedRow = historyTable.getSelectedRow();
-        if (selectedRow < 0 || selectedRow >= records.size()) {
+        if (selectedRow < 0 || records == null || selectedRow >= records.size()) {
             JOptionPane.showMessageDialog(this, "Select a transfer record to resume.", "Notice", JOptionPane.INFORMATION_MESSAGE);
             return;
         }
