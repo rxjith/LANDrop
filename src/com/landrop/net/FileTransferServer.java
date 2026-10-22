@@ -16,11 +16,17 @@ public class FileTransferServer {
         boolean onRequestTransfer(String peerIp, String fileName, long fileSize);
     }
 
+    @FunctionalInterface
+    public interface TransferCompletionListener {
+        void onTransferComplete(String fileName, long fileSize, String peerIp);
+    }
+
     private final int port;
     private final String downloadDir;
     private ServerSocket serverSocket;
     private volatile boolean running = false;
     private TransferAcceptanceListener acceptanceListener;
+    private TransferCompletionListener completionListener;
 
     public FileTransferServer(int port, String downloadDir) {
         this.port = port;
@@ -29,6 +35,10 @@ public class FileTransferServer {
 
     public void setAcceptanceListener(TransferAcceptanceListener listener) {
         this.acceptanceListener = listener;
+    }
+
+    public void setCompletionListener(TransferCompletionListener listener) {
+        this.completionListener = listener;
     }
 
     public void start() throws IOException {
@@ -121,6 +131,11 @@ public class FileTransferServer {
                             DatabaseManager.saveCheckpoint(metadata, "COMPLETED");
                             out.writeUTF("SUCCESS");
                             System.out.println("\n[FILE RECEIVED & VERIFIED] " + fileName + " saved to " + targetFile.getAbsolutePath());
+
+                            // Trigger completion listener callback for recipient notifications
+                            if (completionListener != null) {
+                                completionListener.onTransferComplete(fileName, fileSize, peerIp);
+                            }
                         } else {
                             DatabaseManager.saveCheckpoint(metadata, "CORRUPTED");
                             out.writeUTF("HASH_MISMATCH");

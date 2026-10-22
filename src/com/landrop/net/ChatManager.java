@@ -16,7 +16,6 @@ public class ChatManager {
     private ServerSocket serverSocket;
     private volatile boolean running = false;
     
-    // BiConsumer passes both the sender's IP address and the message text payload
     private final BiConsumer<String, String> onMessageReceived;
 
     public ChatManager(BiConsumer<String, String> onMessageReceived) {
@@ -57,12 +56,23 @@ public class ChatManager {
         new Thread(() -> {
             try (Socket socket = new Socket(targetIp, CHAT_PORT);
                  PrintWriter writer = new PrintWriter(socket.getOutputStream(), true)) {
-                // Formatting payload: [senderHost] message
                 writer.println("[" + senderHost + "] " + message);
             } catch (Exception e) {
                 LOGGER.log(Level.SEVERE, "Failed to send message to " + targetIp + ": ", e);
             }
         }, "ChatClient-Worker").start();
+    }
+
+    // NEW: Sends raw strings directly without formatting a sender header tag
+    public static void sendRawMessageAsync(String targetIp, String rawPayload) {
+        new Thread(() -> {
+            try (Socket socket = new Socket(targetIp, CHAT_PORT);
+                 PrintWriter writer = new PrintWriter(socket.getOutputStream(), true)) {
+                writer.println(rawPayload);
+            } catch (Exception e) {
+                LOGGER.log(Level.SEVERE, "Failed to send raw payload to " + targetIp + ": ", e);
+            }
+        }, "ChatClient-RawWorker").start();
     }
 
     public void stop() {

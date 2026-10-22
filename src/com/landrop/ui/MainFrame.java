@@ -328,6 +328,25 @@ public class MainFrame extends JFrame {
             }
         });
 
+        // Set up completion listener for incoming file transfers
+        fileServer.setCompletionListener((fileName, fileSize, peerIp) -> {
+            String sizeStr = String.format("%.2f MB", fileSize / (1024.0 * 1024.0));
+            SwingUtilities.invokeLater(() -> {
+                if (chatLogArea != null) {
+                    chatLogArea.append(String.format("[System]: Successfully received file '%s' (%s) from %s\n", fileName, sizeStr, peerIp));
+                }
+                if (statusLabel != null) {
+                    statusLabel.setText("Status: File transfer complete.");
+                }
+            });
+
+            TrayManager.showNotification(
+                "File Transfer Complete",
+                "Successfully received " + fileName + " (" + sizeStr + ")",
+                TrayIcon.MessageType.INFO
+            );
+        });
+
         try {
             fileServer.start();
         } catch (Exception e) {
@@ -342,14 +361,13 @@ public class MainFrame extends JFrame {
             radarPanel.setGhostToggleListener(discoveryService::setStealthMode);
         }
 
-        // Initialize Clipboard Manager and broadcast local copies if enabled
+        // Initialize Clipboard Manager and broadcast raw payloads if enabled
         clipboardManager = new ClipboardManager();
         clipboardManager.startMonitoring(payload -> {
             if (!AppConfig.isClipboardSyncEnabled()) return; // Block sending if disabled
             if (targetPeer != null && targetPeer.getIpAddress() != null) {
-                ChatManager.sendMessageAsync(
+                ChatManager.sendRawMessageAsync(
                     targetPeer.getIpAddress().getHostAddress(),
-                    localDeviceName,
                     payload
                 );
             }
