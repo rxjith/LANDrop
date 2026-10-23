@@ -61,7 +61,7 @@ public class TransferHistoryDialog extends JDialog {
         loadHistory();
 
         // Start background auto-refresh timer (every 1.5 seconds) to update progress in real-time
-        autoRefreshTimer = new Timer(1.5 > 0 ? 1500 : 1500, e -> loadHistoryPreservingSelection());
+        autoRefreshTimer = new Timer(1500, e -> loadHistoryPreservingSelection());
         autoRefreshTimer.start();
 
         // Ensure timer stops when dialog closes
